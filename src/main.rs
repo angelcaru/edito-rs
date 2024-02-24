@@ -20,6 +20,7 @@ struct Editor {
     buf: Vec<Vec<u8>>,
     cursor: (usize, usize),
     file_path: Option<String>,
+    camera_topleft: (usize, usize),
 }
 
 impl Editor {
@@ -31,12 +32,14 @@ impl Editor {
             buf,
             cursor: (0, 0),
             file_path: None,
+            camera_topleft: (0, 0),
         })
     }
 
     fn load_file(&mut self, file_path: String) -> Result<(), std::io::Error> {
         let f = std::fs::File::open(file_path.clone())?.bytes();
 
+        self.buf = Vec::new();
         let mut row = Vec::new();
         for ch in f {
             let ch = ch?;
@@ -75,7 +78,6 @@ impl Editor {
             "Cannot move cursor horizontally and vertically at the same time"
         );
         let (x, y) = &mut self.cursor;
-
         let (new_x, new_y) = (*x as isize + dx, *y as isize + dy);
         let allowed_x = 0..=self.buf[*y].len() as isize;
         let allowed_y = 0..self.buf.len() as isize;
@@ -89,6 +91,21 @@ impl Editor {
 
         if *x > self.buf[*y].len() {
             *x = self.buf[*y].len()
+        }
+
+        let (cx, cy) = &mut self.camera_topleft;
+        while *y < *cy {
+            *cy -= 1;
+        }
+        while *y >= *cy + self.display.h as usize {
+            *cy += 1;
+        }
+
+        while *x < *cx {
+            *cx -= 1;
+        }
+        while *x >= *cx + self.display.w as usize {
+            *cx += 1;
         }
     }
 
@@ -204,16 +221,19 @@ impl Editor {
     fn render(&mut self) -> Result<(), std::io::Error> {
         self.display.clear();
 
+        let (cx, cy) = self.camera_topleft;
+
         for y in 0..self.display.h as usize {
             for x in 0..self.display.w as usize {
-                self.display
-                    .write(x, y, *get2d(&self.buf, y, x).unwrap_or(&b' '));
+                let ch = *get2d(&self.buf, y + cy, x + cx).unwrap_or(&b' ');
+                self.display.write(x, y, ch);
             }
         }
 
         self.display.render()?;
 
         let (x, y) = self.cursor;
+        let (x, y) = (x - cx, y - cy);
         self.display
             .stdout
             .queue(cursor::MoveTo(x as u16, y as u16))?;
