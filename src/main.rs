@@ -1,4 +1,9 @@
-use crossterm::{cursor, event::*, terminal, QueueableCommand};
+use crossterm::{
+    cursor,
+    event::*,
+    style::{self, Color},
+    terminal, QueueableCommand,
+};
 use std::{
     io::{Read, Write},
     time::Duration,
@@ -21,18 +26,29 @@ struct Editor {
     cursor: (usize, usize),
     file_path: Option<String>,
     camera_topleft: (usize, usize),
+    w: u16,
+    h: u16,
+    status: String,
 }
+
+const UI_HEIGHT: u16 = 2;
 
 impl Editor {
     fn new() -> Result<Self, std::io::Error> {
         let mut buf = Vec::new();
         buf.push(Vec::new());
+
+        let display = TerminalDisplay::new()?;
+        let (w, h) = (display.w, display.h - UI_HEIGHT);
         Ok(Self {
-            display: TerminalDisplay::new()?,
+            display,
             buf,
             cursor: (0, 0),
             file_path: None,
             camera_topleft: (0, 0),
+            w,
+            h,
+            status: String::new(),
         })
     }
 
@@ -52,23 +68,32 @@ impl Editor {
         }
         self.buf.push(row);
 
-        self.file_path = Some(file_path);
+        self.file_path = Some(file_path.clone());
+
+        self.status = format!(
+            "Successfully loaded file {}",
+            file_path
+        );
 
         Ok(())
     }
 
-    fn save_file(&self) -> Result<(), std::io::Error> {
+    fn save_file(&mut self) -> Result<(), std::io::Error> {
         if self.file_path.is_none() {
             todo!("Some sort of dialogue to allow the user to choose where to save the file");
-        } else {
-            let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
-
-            for row in &self.buf {
-                f.write_all(row)?;
-                // TODO: support different line endings
-                f.write_ch(b'\n')?;
-            }
         }
+        let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
+
+        for row in &self.buf {
+            f.write_all(row)?;
+            // TODO: support different line endings
+            f.write_ch(b'\n')?;
+        }
+
+        self.status = format!(
+            "Successfully saved file to {}",
+            self.file_path.clone().unwrap()
+        );
         Ok(())
     }
 
@@ -97,22 +122,25 @@ impl Editor {
         while *y < *cy {
             *cy -= 1;
         }
-        while *y >= *cy + self.display.h as usize {
+        while *y >= *cy + self.h as usize {
             *cy += 1;
         }
 
         while *x < *cx {
             *cx -= 1;
         }
-        while *x >= *cx + self.display.w as usize {
+        while *x >= *cx + self.w as usize {
             *cx += 1;
         }
     }
 
     fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
+        self.status = String::new();
         match e {
             Event::Resize(w, h) => {
                 self.display.resize(w, h);
+                self.w = w;
+                self.h = h - UI_HEIGHT;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('c'),
@@ -221,16 +249,13 @@ impl Editor {
     fn render(&mut self) -> Result<(), std::io::Error> {
         self.display.clear();
 
-        let (cx, cy) = self.camera_topleft;
-
-        for y in 0..self.display.h as usize {
-            for x in 0..self.display.w as usize {
-                let ch = *get2d(&self.buf, y + cy, x + cx).unwrap_or(&b' ');
-                self.display.write(x, y, ch);
-            }
-        }
+        self.render_buf();
+        self.render_file_path();
+        self.render_status_bar();
 
         self.display.render()?;
+
+        let (cx, cy) = self.camera_topleft;
 
         let (x, y) = self.cursor;
         let (x, y) = (x - cx, y - cy);
@@ -241,16 +266,86 @@ impl Editor {
 
         Ok(())
     }
+
+    fn render_buf(&mut self) {
+        let (cx, cy) = self.camera_topleft;
+
+        for y in 0..self.h as usize {
+            for x in 0..self.w as usize {
+                let ch = *get2d(&self.buf, y + cy, x + cx).unwrap_or(&b' ');
+                let cell = Cell {
+                    ch,
+                    fg: Color::Reset,
+                    bg: Color::Reset,
+                };
+                self.display.write(x, y, cell);
+            }
+        }
+    }
+
+    fn render_file_path(&mut self) {
+        let y = self.display.h as usize - 2;
+
+        let file_path = self
+            .file_path
+            .clone()
+            .unwrap_or("<temporary buffer>".into());
+        for x in 0..self.w as usize {
+            let cell = Cell {
+                ch: *file_path.as_bytes().get(x).unwrap_or(&b' ') as u8,
+                fg: Color::Black,
+                bg: Color::White,
+            };
+            self.display.write(x, y, cell);
+        }
+    }
+
+    fn render_status_bar(&mut self) {
+        let y = self.display.h as usize - 1;
+
+        for x in 0..self.w as usize {
+            let cell = Cell {
+                ch: *self.status.as_bytes().get(x).unwrap_or(&b' ') as u8,
+                fg: Color::Reset,
+                bg: Color::Reset,
+            };
+            self.display.write(x, y, cell);
+        }
+    }
 }
 
 fn get2d<T>(v: &Vec<Vec<T>>, i: usize, j: usize) -> Option<&T> {
     v.get(i)?.get(j)
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct Cell {
+    ch: u8,
+    fg: Color,
+    bg: Color,
+}
+
+impl Cell {
+    fn empty() -> Self {
+        Self {
+            ch: b' ',
+            fg: Color::Reset,
+            bg: Color::Reset,
+        }
+    }
+
+    fn render<T: Write>(&self, q: &mut T) -> Result<(), std::io::Error> {
+        q.queue(style::SetForegroundColor(self.fg))?;
+        q.queue(style::SetBackgroundColor(self.bg))?;
+        q.write_ch(self.ch)?;
+        Ok(())
+    }
+}
+
 struct TerminalDisplay {
     stdout: std::io::Stdout,
-    prev_chars: Option<Vec<Vec<u8>>>,
-    chars: Vec<Vec<u8>>,
+    prev_chars: Option<Vec<Vec<Cell>>>,
+    chars: Vec<Vec<Cell>>,
     w: u16,
     h: u16,
 }
@@ -267,12 +362,12 @@ impl TerminalDisplay {
         })
     }
 
-    fn init_chars(w: u16, h: u16) -> Vec<Vec<u8>> {
+    fn init_chars(w: u16, h: u16) -> Vec<Vec<Cell>> {
         let mut chars = Vec::with_capacity(h.into());
         for _ in 0..h {
             let mut row = Vec::with_capacity(w.into());
             for _ in 0..w {
-                row.push(b' ');
+                row.push(Cell::empty());
             }
             chars.push(row);
         }
@@ -287,7 +382,7 @@ impl TerminalDisplay {
         self.h = h;
     }
 
-    fn write(&mut self, x: usize, y: usize, ch: u8) {
+    fn write(&mut self, x: usize, y: usize, ch: Cell) {
         self.chars[y][x] = ch;
     }
 
@@ -295,15 +390,17 @@ impl TerminalDisplay {
         //self.stdout.queue(cursor::MoveTo(0, 0))?;
         for (y, row) in self.chars.iter().enumerate() {
             if let Some(prev_chars) = &self.prev_chars {
-                for (x, ch) in row.iter().enumerate() {
-                    if &prev_chars[y][x] != ch {
+                for (x, cell) in row.iter().enumerate() {
+                    if &prev_chars[y][x] != cell {
                         self.stdout.queue(cursor::MoveTo(x as u16, y as u16))?;
-                        self.stdout.write_ch(*ch)?;
+                        cell.render(&mut self.stdout)?;
                     }
                 }
             } else {
                 self.stdout.queue(cursor::MoveTo(0, y as u16))?;
-                self.stdout.write(row)?;
+                for cell in row {
+                    cell.render(&mut self.stdout)?;
+                }
             }
         }
         self.stdout.flush()?;
@@ -316,7 +413,7 @@ impl TerminalDisplay {
 
     fn clear(&mut self) {
         for row in self.chars.iter_mut() {
-            row.fill(0);
+            row.fill(Cell::empty());
         }
     }
 
@@ -353,3 +450,5 @@ fn main() -> Result<(), std::io::Error> {
     terminal::disable_raw_mode()?;
     Ok(())
 }
+
+
