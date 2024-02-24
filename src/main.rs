@@ -75,6 +75,21 @@ impl Editor {
                 *x += 1;
             }
             Event::Key(KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                let (x, y) = &mut self.cursor;
+
+                let (pre, post) = self.buf[*y].split_at(*x);
+                let (pre, post) = (Vec::from(pre), Vec::from(post));
+                self.buf[*y] = post;
+                self.buf.insert(*y, pre);
+
+                *y += 1;
+                *x = 0;
+            }
+            Event::Key(KeyEvent {
                 code: KeyCode::Backspace,
                 modifiers: KeyModifiers::NONE,
                 ..
