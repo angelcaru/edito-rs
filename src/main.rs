@@ -100,6 +100,16 @@ impl Editor {
                 if *x != 0 {
                     self.buf[*y].remove(*x - 1);
                     *x -= 1;
+                } else if *y != 0 {
+                    let post = self.buf[*y].clone();
+                    let pre = &mut self.buf[*y-1];
+
+                    *x = pre.len();
+                    
+                    pre.extend(post);
+                    self.buf.remove(*y);
+
+                    *y -= 1;
                 }
             }
             Event::Key(KeyEvent {
@@ -112,6 +122,12 @@ impl Editor {
 
                 if *x != self.buf[*y].len() {
                     self.buf[*y].remove(*x);
+                } else if *y != self.buf.len() - 1 {
+                    let post = self.buf[*y+1].clone();
+                    let pre = &mut self.buf[*y];
+                    
+                    pre.extend(post);
+                    self.buf.remove(*y+1);
                 }
             }
             Event::Key(KeyEvent {
