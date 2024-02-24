@@ -24,7 +24,8 @@ struct Editor {
 
 impl Editor {
     fn new() -> Result<Self, std::io::Error> {
-        let buf = Vec::new();
+        let mut buf = Vec::new();
+        buf.push(Vec::new());
         Ok(Self {
             display: TerminalDisplay::new()?,
             buf,
