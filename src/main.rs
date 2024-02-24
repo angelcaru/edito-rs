@@ -93,6 +93,9 @@ impl Editor {
 
     fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
         match e {
+            Event::Resize(w, h) => {
+                self.display.resize(w, h);
+            }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
@@ -253,6 +256,14 @@ impl TerminalDisplay {
             chars.push(row);
         }
         chars
+    }
+
+    fn resize(&mut self, w: u16, h: u16) {
+        self.prev_chars = None;
+        self.chars = Self::init_chars(w, h);
+
+        self.w = w;
+        self.h = h;
     }
 
     fn write(&mut self, x: usize, y: usize, ch: u8) {
