@@ -1,7 +1,7 @@
 use crossterm::{
     cursor,
     event::*,
-    style::{self, Color, Attribute},
+    style::{self, Attribute, Color},
     terminal, QueueableCommand,
 };
 use std::{
@@ -28,7 +28,14 @@ struct Editor {
     camera_topleft: (usize, usize),
     w: u16,
     h: u16,
-    status: String,
+    status: Vec<u8>,
+    cursor_state: CursorState,
+    status_prompt: String,
+}
+
+enum CursorState {
+    Default,
+    StatusBar,
 }
 
 const UI_WIDTH: u16 = 4;
@@ -49,7 +56,9 @@ impl Editor {
             camera_topleft: (0, 0),
             w,
             h,
-            status: String::new(),
+            status: Vec::new(),
+            cursor_state: CursorState::Default,
+            status_prompt: String::new(),
         })
     }
 
@@ -71,17 +80,18 @@ impl Editor {
 
         self.file_path = Some(file_path.clone());
 
-        self.status = format!(
-            "Successfully loaded file {}",
-            file_path
-        );
+        self.status = Vec::from(format!("Successfully loaded file {}", file_path));
 
         Ok(())
     }
 
     fn save_file(&mut self) -> Result<(), std::io::Error> {
         if self.file_path.is_none() {
-            todo!("Some sort of dialogue to allow the user to choose where to save the file");
+            self.cursor_state = CursorState::StatusBar;
+            self.cursor.0 = 0;
+
+            self.status_prompt = "File path: ".into();
+            return Ok(());
         }
         let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
 
@@ -91,11 +101,18 @@ impl Editor {
             f.write_ch(b'\n')?;
         }
 
-        self.status = format!(
+        self.status = Vec::from(format!(
             "Successfully saved file to {}",
             self.file_path.clone().unwrap()
-        );
+        ));
         Ok(())
+    }
+
+    fn row(&mut self) -> &mut Vec<u8> {
+        match self.cursor_state {
+            CursorState::Default => &mut self.buf[self.cursor.1],
+            CursorState::StatusBar => &mut self.status,
+        }
     }
 
     fn move_cursor(&mut self, dx: isize, dy: isize) {
@@ -103,40 +120,56 @@ impl Editor {
             dx == 0 || dy == 0,
             "Cannot move cursor horizontally and vertically at the same time"
         );
-        let (x, y) = &mut self.cursor;
-        let (new_x, new_y) = (*x as isize + dx, *y as isize + dy);
-        let allowed_x = 0..=self.buf[*y].len() as isize;
+        let (new_x, new_y) = (self.cursor.0 as isize + dx, self.cursor.1 as isize + dy);
+        let allowed_x = 0..=self.row().len() as isize;
         let allowed_y = 0..self.buf.len() as isize;
 
         if allowed_x.contains(&new_x) {
-            *x = new_x as usize;
+            self.cursor.0 = new_x as usize;
         }
         if allowed_y.contains(&new_y) {
-            *y = new_y as usize;
+            self.cursor.1 = new_y as usize;
         }
 
-        if *x > self.buf[*y].len() {
-            *x = self.buf[*y].len()
+        if self.cursor.0 > self.row().len() {
+            self.cursor.0 = self.row().len()
         }
 
         let (cx, cy) = &mut self.camera_topleft;
-        while *y < *cy {
+        while self.cursor.1 < *cy {
             *cy -= 1;
         }
-        while *y >= *cy + self.h as usize {
+        while self.cursor.1 >= *cy + self.h as usize {
             *cy += 1;
         }
 
-        while *x < *cx {
+        while self.cursor.0 < *cx {
             *cx -= 1;
         }
-        while *x >= *cx + self.w as usize {
+        while self.cursor.0 >= *cx + self.w as usize {
             *cx += 1;
         }
     }
 
+    fn handle_status_prompt(&mut self) -> Result<(), std::io::Error> {
+        self.file_path = Some(std::str::from_utf8(&self.status).unwrap().into());
+        self.save_file()?;
+
+        self.cursor_state = CursorState::Default;
+        self.status = Vec::new();
+        self.status_prompt = String::new();
+
+        if self.cursor.0 > self.row().len() {
+            self.cursor.0 = self.row().len();
+        }
+
+        Ok(())
+    }
+
     fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
-        self.status = String::new();
+        if let CursorState::Default = self.cursor_state {
+            self.status = Vec::new();
+        }
         match e {
             Event::Resize(w, h) => {
                 self.display.resize(w, h);
@@ -158,19 +191,26 @@ impl Editor {
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
             }) => {
-                let (x, y) = &mut self.cursor;
-                assert!(*y < self.buf.len());
+                assert!(self.cursor.1 < self.buf.len());
 
                 // TODO: proper Unicode support
-                self.buf[*y].insert(*x, ch as u8);
+                let x = self.cursor.0;
+                let row = self.row();
+                row.insert(x, ch as u8);
 
-                *x += 1;
+                self.cursor.0 += 1;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
+                if let CursorState::StatusBar = self.cursor_state {
+                    self.handle_status_prompt()?;
+                    return Ok(false);
+                }
+
+
                 let (x, y) = &mut self.cursor;
 
                 let (pre, post) = self.buf[*y].split_at(*x);
@@ -186,22 +226,23 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                let (x, y) = &mut self.cursor;
-                assert!(*y < self.buf.len());
+                assert!(self.cursor.1 < self.buf.len());
 
-                if *x != 0 {
-                    self.buf[*y].remove(*x - 1);
-                    *x -= 1;
-                } else if *y != 0 {
-                    let post = self.buf[*y].clone();
-                    let pre = &mut self.buf[*y - 1];
+                if self.cursor.0 != 0 {
+                    let x = self.cursor.0;
+                    let row = self.row();
+                    row.remove(x - 1);
+                    self.cursor.0 -= 1;
+                } else if self.cursor.1 != 0 {
+                    let post = self.buf[self.cursor.1].clone();
+                    let pre = &mut self.buf[self.cursor.1 - 1];
 
-                    *x = pre.len();
+                    self.cursor.0 = pre.len();
 
                     pre.extend(post);
-                    self.buf.remove(*y);
+                    self.buf.remove(self.cursor.1);
 
-                    *y -= 1;
+                    self.cursor.1 -= 1;
                 }
             }
             Event::Key(KeyEvent {
@@ -209,17 +250,17 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                let (x, y) = &mut self.cursor;
-                assert!(*y < self.buf.len());
+                assert!(self.cursor.1 < self.buf.len());
 
-                if *x != self.buf[*y].len() {
-                    self.buf[*y].remove(*x);
-                } else if *y != self.buf.len() - 1 {
-                    let post = self.buf[*y + 1].clone();
-                    let pre = &mut self.buf[*y];
+                if self.cursor.0 != self.row().len() {
+                    let x = self.cursor.0;
+                    self.row().remove(x);
+                } else if self.cursor.1 != self.buf.len() - 1 {
+                    let post = self.buf[self.cursor.1 + 1].clone();
+                    let pre = &mut self.buf[self.cursor.1];
 
                     pre.extend(post);
-                    self.buf.remove(*y + 1);
+                    self.buf.remove(self.cursor.1 + 1);
                 }
             }
             Event::Key(KeyEvent {
@@ -254,7 +295,7 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                self.cursor.0 = self.buf[self.cursor.1].len();
+                self.cursor.0 = self.row().len();
             }
             _ => {}
         }
@@ -274,10 +315,15 @@ impl Editor {
         let (cx, cy) = self.camera_topleft;
 
         let (x, y) = self.cursor;
-        let (x, y) = (x - cx, y - cy);
+        let (x, y) = if let CursorState::StatusBar = self.cursor_state {
+            (x - cx + self.status_prompt.len(), (self.h + 1) as usize)
+        } else {
+            (x - cx + UI_WIDTH as usize, y - cy)
+        };
+
         self.display
             .stdout
-            .queue(cursor::MoveTo(x as u16 + UI_WIDTH, y as u16))?;
+            .queue(cursor::MoveTo(x as u16, y as u16))?;
         self.display.stdout.flush()?;
 
         Ok(())
@@ -292,22 +338,26 @@ impl Editor {
 
             let num_str = lpad((num + 1).to_string(), 3);
 
-            for x in 0..(UI_WIDTH-1) {
+            for x in 0..(UI_WIDTH - 1) {
                 let x = x as usize;
-                self.display.write(x, y, Cell {
-                    ch: num_str.bytes().nth(x.into()).unwrap_or(b' '),
-                    fg: if num == self.cursor.1 {
-                        Color::White
-                    } else {
-                        Color::Grey
+                self.display.write(
+                    x,
+                    y,
+                    Cell {
+                        ch: num_str.bytes().nth(x.into()).unwrap_or(b' '),
+                        fg: if num == self.cursor.1 {
+                            Color::White
+                        } else {
+                            Color::Grey
+                        },
+                        bg: Color::DarkGrey,
+                        attr: if num == self.cursor.1 {
+                            Attribute::Bold
+                        } else {
+                            Attribute::Reset
+                        },
                     },
-                    bg: Color::DarkGrey,
-                    attr: if num == self.cursor.1 {
-                        Attribute::Bold
-                    } else {
-                        Attribute::Reset
-                    }, 
-                })
+                )
             }
         }
     }
@@ -323,7 +373,7 @@ impl Editor {
                     ch,
                     fg: Color::Reset,
                     bg: Color::Reset,
-                    attr: Attribute::Reset
+                    attr: Attribute::Reset,
                 };
                 self.display.write(x, y, cell);
             }
@@ -351,12 +401,17 @@ impl Editor {
     fn render_status_bar(&mut self) {
         let y = self.display.h as usize - 1;
 
-        for x in 0..self.display.w as usize {
+        let status_iter = self
+            .status_prompt
+            .bytes()
+            .chain(self.status.iter().map(|x| *x))
+            .chain(std::iter::repeat(b' '));
+        for (x, ch) in (0..self.display.w as usize).zip(status_iter) {
             let cell = Cell {
-                ch: *self.status.as_bytes().get(x).unwrap_or(&b' ') as u8,
+                ch,
                 fg: Color::Reset,
                 bg: Color::Reset,
-                attr: Attribute::Reset
+                attr: Attribute::Reset,
             };
             self.display.write(x, y, cell);
         }
@@ -509,6 +564,3 @@ fn main() -> Result<(), std::io::Error> {
     terminal::disable_raw_mode()?;
     Ok(())
 }
-
-
-
