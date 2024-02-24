@@ -242,6 +242,20 @@ impl Editor {
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => self.move_cursor(0, 1),
+            Event::Key(KeyEvent {
+                code: KeyCode::Home,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.cursor.0 = 0;
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::End,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.cursor.0 = self.buf[self.cursor.1].len();
+            }
             _ => {}
         }
         Ok(false)
