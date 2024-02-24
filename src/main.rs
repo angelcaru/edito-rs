@@ -276,7 +276,7 @@ impl Editor {
             let y = y as usize;
             let num = y + cy;
 
-            let num_str = lpad(num.to_string(), 3);
+            let num_str = lpad((num + 1).to_string(), 3);
 
             for x in 0..(UI_WIDTH-1) {
                 let x = x as usize;
@@ -495,5 +495,6 @@ fn main() -> Result<(), std::io::Error> {
     terminal::disable_raw_mode()?;
     Ok(())
 }
+
 
 
