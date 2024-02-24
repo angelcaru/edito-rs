@@ -1,7 +1,7 @@
 use crossterm::{
     cursor,
     event::*,
-    style::{self, Color},
+    style::{self, Color, Attribute},
     terminal, QueueableCommand,
 };
 use std::{
@@ -288,6 +288,11 @@ impl Editor {
                         Color::Grey
                     },
                     bg: Color::DarkGrey,
+                    attr: if num == self.cursor.1 {
+                        Attribute::Bold
+                    } else {
+                        Attribute::Reset
+                    }, 
                 })
             }
         }
@@ -304,6 +309,7 @@ impl Editor {
                     ch,
                     fg: Color::Reset,
                     bg: Color::Reset,
+                    attr: Attribute::Reset
                 };
                 self.display.write(x, y, cell);
             }
@@ -322,6 +328,7 @@ impl Editor {
                 ch: *file_path.as_bytes().get(x).unwrap_or(&b' ') as u8,
                 fg: Color::Black,
                 bg: Color::White,
+                attr: Attribute::Reset,
             };
             self.display.write(x, y, cell);
         }
@@ -335,6 +342,7 @@ impl Editor {
                 ch: *self.status.as_bytes().get(x).unwrap_or(&b' ') as u8,
                 fg: Color::Reset,
                 bg: Color::Reset,
+                attr: Attribute::Reset
             };
             self.display.write(x, y, cell);
         }
@@ -357,6 +365,7 @@ struct Cell {
     ch: u8,
     fg: Color,
     bg: Color,
+    attr: Attribute,
 }
 
 impl Cell {
@@ -365,10 +374,12 @@ impl Cell {
             ch: b' ',
             fg: Color::Reset,
             bg: Color::Reset,
+            attr: Attribute::Reset,
         }
     }
 
     fn render<T: Write>(&self, q: &mut T) -> Result<(), std::io::Error> {
+        q.queue(style::SetAttribute(self.attr))?;
         q.queue(style::SetForegroundColor(self.fg))?;
         q.queue(style::SetBackgroundColor(self.bg))?;
         q.write_ch(self.ch)?;
