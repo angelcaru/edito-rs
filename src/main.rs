@@ -31,6 +31,7 @@ struct Editor {
     status: String,
 }
 
+const UI_WIDTH: u16 = 4;
 const UI_HEIGHT: u16 = 2;
 
 impl Editor {
@@ -39,7 +40,7 @@ impl Editor {
         buf.push(Vec::new());
 
         let display = TerminalDisplay::new()?;
-        let (w, h) = (display.w, display.h - UI_HEIGHT);
+        let (w, h) = (display.w - UI_WIDTH, display.h - UI_HEIGHT);
         Ok(Self {
             display,
             buf,
@@ -139,7 +140,7 @@ impl Editor {
         match e {
             Event::Resize(w, h) => {
                 self.display.resize(w, h);
-                self.w = w;
+                self.w = w - UI_WIDTH;
                 self.h = h - UI_HEIGHT;
             }
             Event::Key(KeyEvent {
@@ -249,6 +250,7 @@ impl Editor {
     fn render(&mut self) -> Result<(), std::io::Error> {
         self.display.clear();
 
+        self.render_line_numbers();
         self.render_buf();
         self.render_file_path();
         self.render_status_bar();
@@ -261,18 +263,43 @@ impl Editor {
         let (x, y) = (x - cx, y - cy);
         self.display
             .stdout
-            .queue(cursor::MoveTo(x as u16, y as u16))?;
+            .queue(cursor::MoveTo(x as u16 + UI_WIDTH, y as u16))?;
         self.display.stdout.flush()?;
 
         Ok(())
+    }
+
+    fn render_line_numbers(&mut self) {
+        let (_, cy) = self.camera_topleft;
+
+        for y in 0..self.h {
+            let y = y as usize;
+            let num = y + cy;
+
+            let num_str = lpad(num.to_string(), 3);
+
+            for x in 0..(UI_WIDTH-1) {
+                let x = x as usize;
+                self.display.write(x, y, Cell {
+                    ch: num_str.bytes().nth(x.into()).unwrap_or(b' '),
+                    fg: if num == self.cursor.1 {
+                        Color::White
+                    } else {
+                        Color::Grey
+                    },
+                    bg: Color::DarkGrey,
+                })
+            }
+        }
     }
 
     fn render_buf(&mut self) {
         let (cx, cy) = self.camera_topleft;
 
         for y in 0..self.h as usize {
-            for x in 0..self.w as usize {
-                let ch = *get2d(&self.buf, y + cy, x + cx).unwrap_or(&b' ');
+            for x in 0..self.w {
+                let x = (x + UI_WIDTH) as usize;
+                let ch = *get2d(&self.buf, y + cy, x + cx - UI_WIDTH as usize).unwrap_or(&b' ');
                 let cell = Cell {
                     ch,
                     fg: Color::Reset,
@@ -290,7 +317,7 @@ impl Editor {
             .file_path
             .clone()
             .unwrap_or("<temporary buffer>".into());
-        for x in 0..self.w as usize {
+        for x in 0..self.display.w as usize {
             let cell = Cell {
                 ch: *file_path.as_bytes().get(x).unwrap_or(&b' ') as u8,
                 fg: Color::Black,
@@ -303,7 +330,7 @@ impl Editor {
     fn render_status_bar(&mut self) {
         let y = self.display.h as usize - 1;
 
-        for x in 0..self.w as usize {
+        for x in 0..self.display.w as usize {
             let cell = Cell {
                 ch: *self.status.as_bytes().get(x).unwrap_or(&b' ') as u8,
                 fg: Color::Reset,
@@ -312,6 +339,13 @@ impl Editor {
             self.display.write(x, y, cell);
         }
     }
+}
+
+fn lpad(mut s: String, n: usize) -> String {
+    while s.len() < n {
+        s.insert(0, ' ');
+    }
+    s
 }
 
 fn get2d<T>(v: &Vec<Vec<T>>, i: usize, j: usize) -> Option<&T> {
