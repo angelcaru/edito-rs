@@ -1,5 +1,8 @@
 use crossterm::{cursor, event::*, terminal, QueueableCommand};
-use std::{io::Write, time::Duration};
+use std::{
+    io::{Read, Write},
+    time::Duration,
+};
 
 trait WriteChar {
     fn write_ch(&mut self, ch: u8) -> Result<usize, std::io::Error>;
@@ -16,19 +19,53 @@ struct Editor {
     display: TerminalDisplay,
     buf: Vec<Vec<u8>>,
     cursor: (usize, usize),
+    file_path: Option<String>,
 }
 
 impl Editor {
     fn new() -> Result<Self, std::io::Error> {
-        let mut buf = Vec::new();
-        buf.push(Vec::from(b"Hello, World!"));
-        buf.push(Vec::from(b"Foo, Bar!"));
-        buf.push(Vec::from(b"Test, Hello!"));
+        let buf = Vec::new();
         Ok(Self {
             display: TerminalDisplay::new()?,
             buf,
             cursor: (0, 0),
+            file_path: None,
         })
+    }
+
+    fn load_file(&mut self, file_path: String) -> Result<(), std::io::Error> {
+        let f = std::fs::File::open(file_path.clone())?.bytes();
+
+        let mut row = Vec::new();
+        for ch in f {
+            let ch = ch?;
+            if ch == b'\n' {
+                self.buf.push(row);
+                row = Vec::new();
+            } else {
+                row.push(ch);
+            }
+        }
+        self.buf.push(row);
+
+        self.file_path = Some(file_path);
+
+        Ok(())
+    }
+
+    fn save_file(&self) -> Result<(), std::io::Error> {
+        if self.file_path.is_none() {
+            todo!("Some sort of dialogue to allow the user to choose where to save the file");
+        } else {
+            let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
+
+            for row in &self.buf {
+                f.write_all(row)?;
+                // TODO: support different line endings
+                f.write_ch(b'\n')?;
+            }
+        }
+        Ok(())
     }
 
     fn move_cursor(&mut self, dx: isize, dy: isize) {
@@ -61,6 +98,11 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             }) => return Ok(true),
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('s'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }) => self.save_file()?,
             Event::Key(KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
@@ -102,10 +144,10 @@ impl Editor {
                     *x -= 1;
                 } else if *y != 0 {
                     let post = self.buf[*y].clone();
-                    let pre = &mut self.buf[*y-1];
+                    let pre = &mut self.buf[*y - 1];
 
                     *x = pre.len();
-                    
+
                     pre.extend(post);
                     self.buf.remove(*y);
 
@@ -123,11 +165,11 @@ impl Editor {
                 if *x != self.buf[*y].len() {
                     self.buf[*y].remove(*x);
                 } else if *y != self.buf.len() - 1 {
-                    let post = self.buf[*y+1].clone();
+                    let post = self.buf[*y + 1].clone();
                     let pre = &mut self.buf[*y];
-                    
+
                     pre.extend(post);
-                    self.buf.remove(*y+1);
+                    self.buf.remove(*y + 1);
                 }
             }
             Event::Key(KeyEvent {
@@ -255,8 +297,15 @@ impl TerminalDisplay {
 }
 
 fn main() -> Result<(), std::io::Error> {
+    let mut args = std::env::args();
+    let _ = args.next();
+
     let polling_rate = Duration::from_secs_f64(0.01);
     let mut editor = Editor::new()?;
+
+    if let Some(file_path) = args.next() {
+        editor.load_file(file_path)?;
+    }
 
     terminal::enable_raw_mode()?;
     editor.display.queue_clear()?;
