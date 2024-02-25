@@ -5,8 +5,7 @@ use crossterm::{
     terminal, QueueableCommand,
 };
 use std::{
-    io::{Read, Write},
-    time::Duration,
+    io::{Read, Write}, net::{IpAddr, SocketAddr, TcpListener}, str::FromStr, sync::mpsc::{self, Sender}, thread, time::Duration
 };
 
 trait WriteChar {
@@ -31,6 +30,7 @@ struct Editor {
     status: Vec<u8>,
     cursor_state: CursorState,
     status_prompt: String,
+    logger: Option<Sender<String>>
 }
 
 enum CursorState {
@@ -59,7 +59,25 @@ impl Editor {
             status: Vec::new(),
             cursor_state: CursorState::Default,
             status_prompt: String::new(),
+            logger: None,
         })
+    }
+
+    fn enable_logging(&mut self, port: u16) -> std::io::Result<()> {
+        self.logger = Some(logger(port)?);
+        self.set_status(format!("Successfully enabled logging on port {port}"));
+        Ok(())
+    }
+
+    fn log(&mut self, msg: String) {
+        if let Some(logger) = &self.logger {
+            let _ = logger.send(msg); // ignore errors when logging since they aren't that important
+        }
+    }
+
+    fn set_status(&mut self, status: String) {
+        self.log(format!("[STATUS] {status}"));
+        self.status = status.into();
     }
 
     fn load_file(&mut self, file_path: String) -> Result<(), std::io::Error> {
@@ -80,7 +98,7 @@ impl Editor {
 
         self.file_path = Some(file_path.clone());
 
-        self.status = Vec::from(format!("Successfully loaded file {}", file_path));
+        self.set_status(format!("Successfully loaded file {}", file_path));
 
         Ok(())
     }
@@ -101,7 +119,7 @@ impl Editor {
             f.write_ch(b'\n')?;
         }
 
-        self.status = Vec::from(format!(
+        self.set_status(format!(
             "Successfully saved file to {}",
             self.file_path.clone().unwrap()
         ));
@@ -176,6 +194,7 @@ impl Editor {
                 self.w = w - UI_WIDTH;
                 self.h = h - UI_HEIGHT;
             }
+
             Event::Key(KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
@@ -209,7 +228,6 @@ impl Editor {
                     self.handle_status_prompt()?;
                     return Ok(false);
                 }
-
 
                 let (x, y) = &mut self.cursor;
 
@@ -545,6 +563,28 @@ impl TerminalDisplay {
     }
 }
 
+fn logger(port: u16) -> std::io::Result<Sender<String>> {
+    let addr = SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port);
+
+    let listener = TcpListener::bind(addr)?;
+
+    let (sender, reciever) = mpsc::channel::<String>();
+
+    thread::spawn(move || {
+        // TODO: handle errors inside logger thread
+        let (mut stream, _addr) = listener.accept().unwrap();
+        loop {
+            let msg = reciever.recv().unwrap();
+            let msg = msg.as_bytes();
+            stream.write_all(msg).unwrap();
+            stream.write_ch(b'\n').unwrap();
+            stream.flush().unwrap();
+        }
+    });
+
+    Ok(sender)
+}
+
 fn main() -> Result<(), std::io::Error> {
     let mut args = std::env::args();
     let _ = args.next();
@@ -555,6 +595,8 @@ fn main() -> Result<(), std::io::Error> {
     if let Some(file_path) = args.next() {
         editor.load_file(file_path)?;
     }
+
+    editor.enable_logging(6969)?;
 
     terminal::enable_raw_mode()?;
     editor.display.queue_clear()?;
@@ -570,4 +612,3 @@ fn main() -> Result<(), std::io::Error> {
     terminal::disable_raw_mode()?;
     Ok(())
 }
-
