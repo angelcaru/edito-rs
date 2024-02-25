@@ -234,6 +234,9 @@ impl Editor {
                     row.remove(x - 1);
                     self.cursor.0 -= 1;
                 } else if self.cursor.1 != 0 {
+                    if let CursorState::StatusBar = self.cursor_state {
+                        return Ok(false);
+                    }
                     let post = self.buf[self.cursor.1].clone();
                     let pre = &mut self.buf[self.cursor.1 - 1];
 
@@ -256,6 +259,9 @@ impl Editor {
                     let x = self.cursor.0;
                     self.row().remove(x);
                 } else if self.cursor.1 != self.buf.len() - 1 {
+                    if let CursorState::StatusBar = self.cursor_state {
+                        return Ok(false);
+                    }
                     let post = self.buf[self.cursor.1 + 1].clone();
                     let pre = &mut self.buf[self.cursor.1];
 
@@ -564,3 +570,4 @@ fn main() -> Result<(), std::io::Error> {
     terminal::disable_raw_mode()?;
     Ok(())
 }
+
