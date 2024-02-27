@@ -1,17 +1,18 @@
 mod display;
 
-use display::*;
 use crossterm::{
-    cursor,
+    cursor::{self, MoveTo},
     event::*,
-    style::{Attribute, Color},
-    terminal,
-    QueueableCommand,
+    style::{self, Attribute, Color, Colors},
+    terminal::{self, Clear},
+    ExecutableCommand, QueueableCommand,
 };
+use display::*;
 use std::{
     cmp::Ordering,
     io::{Read, Write},
     net::{IpAddr, SocketAddr, TcpListener},
+    process::exit,
     str::FromStr,
     sync::mpsc::{self, Sender},
     thread,
@@ -65,6 +66,7 @@ enum CursorState {
 enum PromptType {
     FileSave,
     QuitOnNoSave,
+    Command,
 }
 
 struct Editor {
@@ -230,28 +232,59 @@ impl Editor {
         }
     }
 
+    fn process_command(&mut self, cmd: &str) -> String {
+        let cmd: Vec<_> = cmd.split_whitespace().collect();
+        if cmd.is_empty() {
+            return "ERROR: empty command".into();
+        }
+
+        match cmd[0] {
+            "quit" => quit(),
+            "load" => {
+                if cmd.len() != 2 {
+                    return "ERROR: the \"load\" command expects exactly one argument (without spaces)".into();
+                }
+
+                if let Err(err) = self.load_file(cmd[1].into()) {
+                    format!("ERROR: {err}")
+                } else {
+                    std::str::from_utf8(&self.status)
+                        .expect("that we didn't put garbage into the status")
+                        .into()
+                }
+            }
+            x => format!("ERROR: unknown command: {x:?}"),
+        }
+    }
+
     fn handle_status_prompt(&mut self) -> Result<bool, std::io::Error> {
-        let answer = self.status.clone();
-        let answer = std::str::from_utf8(&answer).unwrap();
+        let response = self.status.clone();
+        let response = std::str::from_utf8(&response).unwrap();
         self.status.clear();
         match self
             .prompt_type
             .expect("we never call this when the prompt is empty")
         {
             PromptType::FileSave => {
-                self.file_path = Some(answer.into());
+                self.file_path = Some(response.into());
                 self.save_file()?;
             }
             PromptType::QuitOnNoSave => {
-                match answer {
+                match response {
                     "y" | "Y" => {
                         self.save_file()?;
-                        return Ok(true);
-                    },
-                    "n" | "N" => return Ok(true),
+                        quit();
+                    }
+                    "n" | "N" => quit(),
                     //"c" | "C" => todo!(),
-                    _ => self.set_status(format!("The answer must be one of 'y' or 'n', not {answer:?}")),
+                    _ => self.set_status(format!(
+                        "The answer must be one of 'y' or 'n', not {response:?}"
+                    )),
                 }
+            }
+            PromptType::Command => {
+                let new_status = self.process_command(response);
+                self.set_status(new_status);
             }
         }
 
@@ -361,7 +394,7 @@ impl Editor {
                         PromptType::QuitOnNoSave,
                     );
                 } else {
-                    return Ok(true);
+                    quit();
                 }
             }
             Event::Key(KeyEvent {
@@ -491,6 +524,13 @@ impl Editor {
             }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
                 self.update_selection(modifiers);
                 self.cursor.pos.0 = self.row().len();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Esc,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                self.set_status_prompt("Command: ".into(), PromptType::Command);
             }
             _ => {}
         }
@@ -685,6 +725,14 @@ fn logger(port: u16) -> std::io::Result<Sender<String>> {
     Ok(sender)
 }
 
+fn quit() -> ! {
+    let _ = terminal::disable_raw_mode();
+    let _ = std::io::stdout().execute(style::SetColors(Colors::new(Color::Reset, Color::Reset)));
+    let _ = std::io::stdout().execute(Clear(terminal::ClearType::All));
+    let _ = std::io::stdout().execute(MoveTo(0, 0));
+    exit(0);
+}
+
 fn main() -> Result<(), std::io::Error> {
     let mut args = std::env::args();
     let _ = args.next();
@@ -702,11 +750,9 @@ fn main() -> Result<(), std::io::Error> {
     editor.display.queue_clear()?;
 
     loop {
-        if poll(polling_rate)? && editor.handle_event(read()?)? {
-            break;
+        if poll(polling_rate)? {
+            editor.handle_event(read()?)?;
         }
         editor.render()?;
     }
-    terminal::disable_raw_mode()?;
-    Ok(())
 }
