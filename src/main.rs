@@ -5,7 +5,13 @@ use crossterm::{
     terminal, QueueableCommand,
 };
 use std::{
-    io::{Read, Write}, net::{IpAddr, SocketAddr, TcpListener}, str::FromStr, sync::mpsc::{self, Sender}, thread, time::Duration
+    cmp::Ordering,
+    io::{Read, Write},
+    net::{IpAddr, SocketAddr, TcpListener},
+    str::FromStr,
+    sync::mpsc::{self, Sender},
+    thread,
+    time::Duration,
 };
 
 trait WriteChar {
@@ -19,23 +25,49 @@ impl<T: Write> WriteChar for T {
     }
 }
 
-struct Editor {
-    display: TerminalDisplay,
-    buf: Vec<Vec<u8>>,
-    cursor: (usize, usize),
-    file_path: Option<String>,
-    camera_topleft: (usize, usize),
-    w: u16,
-    h: u16,
-    status: Vec<u8>,
-    cursor_state: CursorState,
-    status_prompt: String,
-    logger: Option<Sender<String>>
+type Pos = (usize, usize);
+
+struct Cursor {
+    selection_start: Option<Pos>,
+    pos: Pos,
+    state: CursorState,
+}
+
+impl Cursor {
+    fn minmax_pos(a: Pos, b: Pos) -> (Pos, Pos) {
+        let (ax, ay) = a;
+        let (bx, by) = b;
+
+        match ay.cmp(&by) {
+            Ordering::Less => (a, b),
+            Ordering::Equal => {
+                if ax < bx {
+                    (a, b)
+                } else {
+                    (b, a)
+                }
+            }
+            Ordering::Greater => (b, a),
+        }
+    }
 }
 
 enum CursorState {
     Default,
     StatusBar,
+}
+
+struct Editor {
+    display: TerminalDisplay,
+    buf: Vec<Vec<u8>>,
+    cursor: Cursor,
+    file_path: Option<String>,
+    camera_topleft: Pos,
+    w: u16,
+    h: u16,
+    status: Vec<u8>,
+    status_prompt: String,
+    logger: Option<Sender<String>>,
 }
 
 const UI_WIDTH: u16 = 4;
@@ -51,13 +83,16 @@ impl Editor {
         Ok(Self {
             display,
             buf,
-            cursor: (0, 0),
+            cursor: Cursor {
+                selection_start: None,
+                pos: (0, 0),
+                state: CursorState::Default,
+            },
             file_path: None,
             camera_topleft: (0, 0),
             w,
             h,
             status: Vec::new(),
-            cursor_state: CursorState::Default,
             status_prompt: String::new(),
             logger: None,
         })
@@ -105,8 +140,8 @@ impl Editor {
 
     fn save_file(&mut self) -> Result<(), std::io::Error> {
         if self.file_path.is_none() {
-            self.cursor_state = CursorState::StatusBar;
-            self.cursor.0 = 0;
+            self.cursor.state = CursorState::StatusBar;
+            self.cursor.pos.0 = 0;
 
             self.status_prompt = "File path: ".into();
             return Ok(());
@@ -127,8 +162,8 @@ impl Editor {
     }
 
     fn row(&mut self) -> &mut Vec<u8> {
-        match self.cursor_state {
-            CursorState::Default => &mut self.buf[self.cursor.1],
+        match self.cursor.state {
+            CursorState::Default => &mut self.buf[self.cursor.pos.1],
             CursorState::StatusBar => &mut self.status,
         }
     }
@@ -138,33 +173,36 @@ impl Editor {
             dx == 0 || dy == 0,
             "Cannot move cursor horizontally and vertically at the same time"
         );
-        let (new_x, new_y) = (self.cursor.0 as isize + dx, self.cursor.1 as isize + dy);
+        let (new_x, new_y) = (
+            self.cursor.pos.0 as isize + dx,
+            self.cursor.pos.1 as isize + dy,
+        );
         let allowed_x = 0..=self.row().len() as isize;
         let allowed_y = 0..self.buf.len() as isize;
 
         if allowed_x.contains(&new_x) {
-            self.cursor.0 = new_x as usize;
+            self.cursor.pos.0 = new_x as usize;
         }
         if allowed_y.contains(&new_y) {
-            self.cursor.1 = new_y as usize;
+            self.cursor.pos.1 = new_y as usize;
         }
 
-        if self.cursor.0 > self.row().len() {
-            self.cursor.0 = self.row().len()
+        if self.cursor.pos.0 > self.row().len() {
+            self.cursor.pos.0 = self.row().len()
         }
 
         let (cx, cy) = &mut self.camera_topleft;
-        while self.cursor.1 < *cy {
+        while self.cursor.pos.1 < *cy {
             *cy -= 1;
         }
-        while self.cursor.1 >= *cy + self.h as usize {
+        while self.cursor.pos.1 >= *cy + self.h as usize {
             *cy += 1;
         }
 
-        while self.cursor.0 < *cx {
+        while self.cursor.pos.0 < *cx {
             *cx -= 1;
         }
-        while self.cursor.0 >= *cx + self.w as usize {
+        while self.cursor.pos.0 >= *cx + self.w as usize {
             *cx += 1;
         }
     }
@@ -173,19 +211,93 @@ impl Editor {
         self.file_path = Some(std::str::from_utf8(&self.status).unwrap().into());
         self.save_file()?;
 
-        self.cursor_state = CursorState::Default;
+        self.cursor.state = CursorState::Default;
         self.status = Vec::new();
         self.status_prompt = String::new();
 
-        if self.cursor.0 > self.row().len() {
-            self.cursor.0 = self.row().len();
+        if self.cursor.pos.0 > self.row().len() {
+            self.cursor.pos.0 = self.row().len();
         }
 
         Ok(())
     }
 
+    fn update_selection(&mut self, modifiers: KeyModifiers) {
+        if self.cursor.selection_start.is_none() {
+            self.cursor.selection_start = Some(self.cursor.pos);
+        }
+
+        if modifiers == KeyModifiers::NONE {
+            self.cursor.selection_start = None;
+        }
+    }
+
+    fn add_char(&mut self, ch: u8) {
+        assert!(self.cursor.pos.1 < self.buf.len());
+
+        if let Some(sel) = self.cursor.selection_start {
+            let ((sx, sy), (cx, cy)) = Cursor::minmax_pos(sel, self.cursor.pos);
+
+            if sy != cy {
+                let post = Vec::from(&self.buf[cy][cx..]);
+                let pre = &mut self.buf[sy];
+
+                pre.resize(sx, b' ');
+                pre.push(ch);
+                pre.extend(post);
+
+                for i in (sy + 1..=cy).rev() {
+                    self.buf.remove(i);
+                }
+
+                self.cursor.selection_start = None;
+                self.cursor.pos = (sx, sy);
+            } else {
+                let row = self.row();
+
+                for i in (sx..=cx).rev() {
+                    row.remove(i);
+                }
+
+                row.insert(sx, ch);
+
+                self.cursor.selection_start = None;
+                self.cursor.pos.0 = sx;
+            }
+        } else {
+            // TODO: proper Unicode support
+            let x = self.cursor.pos.0;
+            let row = self.row();
+            row.insert(x, ch);
+        }
+
+        self.cursor.pos.0 += 1;
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor.pos.0 != 0 {
+            let x = self.cursor.pos.0;
+            let row = self.row();
+            row.remove(x - 1);
+            self.cursor.pos.0 -= 1;
+        } else if self.cursor.pos.1 != 0 {
+            if let CursorState::StatusBar = self.cursor.state {
+                return;
+            }
+            let post = self.buf[self.cursor.pos.1].clone();
+            let pre = &mut self.buf[self.cursor.pos.1 - 1];
+
+            self.cursor.pos.0 = pre.len();
+
+            pre.extend(post);
+            self.buf.remove(self.cursor.pos.1);
+
+            self.cursor.pos.1 -= 1;
+        }
+    }
+
     fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
-        if let CursorState::Default = self.cursor_state {
+        if let CursorState::Default = self.cursor.state {
             self.status = Vec::new();
         }
         match e {
@@ -210,116 +322,120 @@ impl Editor {
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
             }) => {
-                assert!(self.cursor.1 < self.buf.len());
-
-                // TODO: proper Unicode support
-                let x = self.cursor.0;
-                let row = self.row();
-                row.insert(x, ch as u8);
-
-                self.cursor.0 += 1;
+                self.add_char(ch as u8);
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                if let CursorState::StatusBar = self.cursor_state {
+                if let CursorState::StatusBar = self.cursor.state {
                     self.handle_status_prompt()?;
                     return Ok(false);
                 }
 
-                let (x, y) = &mut self.cursor;
+                if self.cursor.selection_start.is_some() {
+                    self.set_status("TODO: handle text selection for the `Enter` key".into());
+                } else {
+                    let (x, y) = &mut self.cursor.pos;
 
-                let (pre, post) = self.buf[*y].split_at(*x);
-                let (pre, post) = (Vec::from(pre), Vec::from(post));
-                self.buf[*y] = post;
-                self.buf.insert(*y, pre);
+                    let (pre, post) = self.buf[*y].split_at(*x);
+                    let (pre, post) = (Vec::from(pre), Vec::from(post));
+                    self.buf[*y] = post;
+                    self.buf.insert(*y, pre);
 
-                *y += 1;
-                *x = 0;
+                    *y += 1;
+                    *x = 0;
+                }
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Backspace,
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                assert!(self.cursor.1 < self.buf.len());
+                assert!(self.cursor.pos.1 < self.buf.len());
 
-                if self.cursor.0 != 0 {
-                    let x = self.cursor.0;
-                    let row = self.row();
-                    row.remove(x - 1);
-                    self.cursor.0 -= 1;
-                } else if self.cursor.1 != 0 {
-                    if let CursorState::StatusBar = self.cursor_state {
-                        return Ok(false);
-                    }
-                    let post = self.buf[self.cursor.1].clone();
-                    let pre = &mut self.buf[self.cursor.1 - 1];
-
-                    self.cursor.0 = pre.len();
-
-                    pre.extend(post);
-                    self.buf.remove(self.cursor.1);
-
-                    self.cursor.1 -= 1;
+                if self.cursor.selection_start.is_some() {
+                    self.add_char(0);
                 }
+                self.backspace();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Delete,
                 modifiers: KeyModifiers::NONE,
                 ..
             }) => {
-                assert!(self.cursor.1 < self.buf.len());
+                assert!(self.cursor.pos.1 < self.buf.len());
 
-                if self.cursor.0 != self.row().len() {
-                    let x = self.cursor.0;
-                    self.row().remove(x);
-                } else if self.cursor.1 != self.buf.len() - 1 {
-                    if let CursorState::StatusBar = self.cursor_state {
-                        return Ok(false);
+                if self.cursor.selection_start.is_some() {
+                    self.add_char(0);
+                    self.backspace();
+                } else if self.cursor.selection_start.is_none()
+                    || self.cursor.selection_start.unwrap().1 == self.cursor.pos.1
+                {
+                    if self.cursor.pos.0 != self.row().len() {
+                        let x = self.cursor.pos.0;
+                        self.row().remove(x);
+                    } else if self.cursor.pos.1 != self.buf.len() - 1 {
+                        if let CursorState::StatusBar = self.cursor.state {
+                            return Ok(false);
+                        }
+                        let post = self.buf[self.cursor.pos.1 + 1].clone();
+                        let pre = &mut self.buf[self.cursor.pos.1];
+
+                        pre.extend(post);
+                        self.buf.remove(self.cursor.pos.1 + 1);
                     }
-                    let post = self.buf[self.cursor.1 + 1].clone();
-                    let pre = &mut self.buf[self.cursor.1];
-
-                    pre.extend(post);
-                    self.buf.remove(self.cursor.1 + 1);
                 }
             }
+
             Event::Key(KeyEvent {
                 code: KeyCode::Left,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => self.move_cursor(-1, 0),
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+                self.update_selection(modifiers);
+                self.move_cursor(-1, 0)
+            }
             Event::Key(KeyEvent {
                 code: KeyCode::Right,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => self.move_cursor(1, 0),
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+                self.update_selection(modifiers);
+                self.move_cursor(1, 0)
+            }
             Event::Key(KeyEvent {
                 code: KeyCode::Up,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => self.move_cursor(0, -1),
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+                self.update_selection(modifiers);
+                self.move_cursor(0, -1)
+            }
             Event::Key(KeyEvent {
                 code: KeyCode::Down,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => self.move_cursor(0, 1),
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+                self.update_selection(modifiers);
+                self.move_cursor(0, 1)
+            }
             Event::Key(KeyEvent {
                 code: KeyCode::Home,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => {
-                self.cursor.0 = 0;
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+                self.update_selection(modifiers);
+                self.cursor.pos.0 = 0;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::End,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => {
-                self.cursor.0 = self.row().len();
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+                self.update_selection(modifiers);
+                self.cursor.pos.0 = self.row().len();
             }
             _ => {}
         }
@@ -327,7 +443,16 @@ impl Editor {
     }
 
     fn render(&mut self) -> Result<(), std::io::Error> {
+        use crossterm::cursor::SetCursorStyle;
         self.display.clear();
+
+        self.display
+            .stdout
+            .queue(if self.cursor.selection_start.is_some() {
+                SetCursorStyle::SteadyUnderScore
+            } else {
+                SetCursorStyle::BlinkingBlock
+            })?;
 
         self.render_line_numbers();
         self.render_buf();
@@ -338,8 +463,8 @@ impl Editor {
 
         let (cx, cy) = self.camera_topleft;
 
-        let (x, y) = self.cursor;
-        let (x, y) = if let CursorState::StatusBar = self.cursor_state {
+        let (x, y) = self.cursor.pos;
+        let (x, y) = if let CursorState::StatusBar = self.cursor.state {
             (x - cx + self.status_prompt.len(), (self.h + 1) as usize)
         } else {
             (x - cx + UI_WIDTH as usize, y - cy)
@@ -369,13 +494,13 @@ impl Editor {
                     y,
                     Cell {
                         ch: num_str.bytes().nth(x.into()).unwrap_or(b' '),
-                        fg: if num == self.cursor.1 {
+                        fg: if num == self.cursor.pos.1 {
                             Color::White
                         } else {
                             Color::Grey
                         },
                         bg: Color::DarkGrey,
-                        attr: if num == self.cursor.1 {
+                        attr: if num == self.cursor.pos.1 {
                             Attribute::Bold
                         } else {
                             Attribute::Reset
@@ -383,6 +508,28 @@ impl Editor {
                     },
                 )
             }
+        }
+    }
+
+    #[rustfmt::skip]
+    fn selected(&self, x: usize, y: usize) -> bool {
+        let Some((sx, sy)) = self.cursor.selection_start else {
+            return false;
+        };
+        let (cx, cy) = self.cursor.pos;
+
+        let ((sx, sy), (cx, cy)) =
+          Cursor::minmax_pos((sx, sy), (cx, cy));
+
+        // let (sx, cx) = (min(sx, cx), max(sx, cx));
+        // let (sy, cy) = (min(sy, cy), max(sy, cy));
+
+        if sy == cy {
+            y == cy && (sx..=cx).contains(&x)
+        } else {
+            ((sy+1)..cy).contains(&y)
+            || (y == sy && x >= sx)
+            || (y == cy && x <= cx)
         }
     }
 
@@ -395,8 +542,16 @@ impl Editor {
                 let ch = *get2d(&self.buf, y + cy, x + cx - UI_WIDTH as usize).unwrap_or(&b' ');
                 let cell = Cell {
                     ch,
-                    fg: Color::Reset,
-                    bg: Color::Reset,
+                    fg: if self.selected(x + cx - UI_WIDTH as usize, y + cy) {
+                        Color::Black
+                    } else {
+                        Color::White
+                    },
+                    bg: if self.selected(x + cx - UI_WIDTH as usize, y + cy) {
+                        Color::White
+                    } else {
+                        Color::Black
+                    },
                     attr: Attribute::Reset,
                 };
                 self.display.write(x, y, cell);
