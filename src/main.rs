@@ -57,6 +57,12 @@ enum CursorState {
     StatusBar,
 }
 
+#[derive(Clone, Copy)]
+enum PromptType {
+    FileSave,
+    QuitOnNoSave,
+}
+
 struct Editor {
     display: TerminalDisplay,
     buf: Vec<Vec<u8>>,
@@ -67,7 +73,9 @@ struct Editor {
     h: u16,
     status: Vec<u8>,
     status_prompt: String,
+    prompt_type: Option<PromptType>,
     logger: Option<Sender<String>>,
+    unsaved_changes: bool,
 }
 
 const UI_WIDTH: u16 = 4;
@@ -94,6 +102,8 @@ impl Editor {
             status: Vec::new(),
             status_prompt: String::new(),
             logger: None,
+            prompt_type: None,
+            unsaved_changes: true,
         })
     }
 
@@ -112,6 +122,14 @@ impl Editor {
     fn set_status(&mut self, status: String) {
         self.log(format!("[STATUS] {status}"));
         self.status = status.into();
+    }
+
+    fn set_status_prompt(&mut self, prompt: String, prompt_type: PromptType) {
+        self.cursor.state = CursorState::StatusBar;
+        self.cursor.pos.0 = 0;
+
+        self.status_prompt = prompt;
+        self.prompt_type = Some(prompt_type);
     }
 
     fn load_file(&mut self, file_path: String) -> Result<(), std::io::Error> {
@@ -133,16 +151,14 @@ impl Editor {
         self.file_path = Some(file_path.clone());
 
         self.set_status(format!("Successfully loaded file {}", file_path));
+        self.unsaved_changes = false;
 
         Ok(())
     }
 
     fn save_file(&mut self) -> Result<(), std::io::Error> {
         if self.file_path.is_none() {
-            self.cursor.state = CursorState::StatusBar;
-            self.cursor.pos.0 = 0;
-
-            self.status_prompt = "File path: ".into();
+            self.set_status_prompt("File path: ".into(), PromptType::FileSave);
             return Ok(());
         }
         let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
@@ -157,6 +173,8 @@ impl Editor {
             "Successfully saved file to {}",
             self.file_path.clone().unwrap()
         ));
+        self.unsaved_changes = false;
+
         Ok(())
     }
 
@@ -206,19 +224,39 @@ impl Editor {
         }
     }
 
-    fn handle_status_prompt(&mut self) -> Result<(), std::io::Error> {
-        self.file_path = Some(std::str::from_utf8(&self.status).unwrap().into());
-        self.save_file()?;
+    fn handle_status_prompt(&mut self) -> Result<bool, std::io::Error> {
+        let answer = self.status.clone();
+        let answer = std::str::from_utf8(&answer).unwrap();
+        self.status.clear();
+        match self
+            .prompt_type
+            .expect("we never call this when the prompt is empty")
+        {
+            PromptType::FileSave => {
+                self.file_path = Some(answer.into());
+                self.save_file()?;
+            }
+            PromptType::QuitOnNoSave => {
+                match answer {
+                    "y" | "Y" => {
+                        self.save_file()?;
+                        return Ok(true);
+                    },
+                    "n" | "N" => return Ok(true),
+                    //"c" | "C" => todo!(),
+                    _ => self.set_status(format!("The answer must be one of 'y' or 'n', not {answer:?}")),
+                }
+            }
+        }
 
         self.cursor.state = CursorState::Default;
-        self.status = Vec::new();
         self.status_prompt = String::new();
 
         if self.cursor.pos.0 > self.row().len() {
             self.cursor.pos.0 = self.row().len();
         }
 
-        Ok(())
+        Ok(false)
     }
 
     fn update_selection(&mut self, modifiers: KeyModifiers) {
@@ -310,7 +348,16 @@ impl Editor {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            }) => return Ok(true),
+            }) => {
+                if self.unsaved_changes {
+                    self.set_status_prompt(
+                        "You have unsaved changes. Save now? (y/n) ".into(),
+                        PromptType::QuitOnNoSave,
+                    );
+                } else {
+                    return Ok(true);
+                }
+            }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
@@ -321,6 +368,7 @@ impl Editor {
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 ..
             }) => {
+                self.unsaved_changes = true;
                 self.add_char(ch as u8);
             }
             Event::Key(KeyEvent {
@@ -329,10 +377,10 @@ impl Editor {
                 ..
             }) => {
                 if let CursorState::StatusBar = self.cursor.state {
-                    self.handle_status_prompt()?;
-                    return Ok(false);
+                    return self.handle_status_prompt();
                 }
 
+                self.unsaved_changes = true;
                 if self.cursor.selection_start.is_some() {
                     self.set_status("TODO: handle text selection for the `Enter` key".into());
                 } else {
@@ -358,6 +406,7 @@ impl Editor {
                     self.add_char(0);
                 }
                 self.backspace();
+                self.unsaved_changes = true;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Delete,
@@ -386,6 +435,7 @@ impl Editor {
                         self.buf.remove(self.cursor.pos.1 + 1);
                     }
                 }
+                self.unsaved_changes = true;
             }
 
             Event::Key(KeyEvent {
