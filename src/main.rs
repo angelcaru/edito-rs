@@ -1,8 +1,12 @@
+mod display;
+
+use display::*;
 use crossterm::{
     cursor,
     event::*,
-    style::{self, Attribute, Color},
-    terminal, QueueableCommand,
+    style::{Attribute, Color},
+    terminal,
+    QueueableCommand,
 };
 use std::{
     cmp::Ordering,
@@ -14,7 +18,7 @@ use std::{
     time::Duration,
 };
 
-trait WriteChar {
+pub trait WriteChar {
     fn write_ch(&mut self, ch: u8) -> Result<usize, std::io::Error>;
 }
 
@@ -655,116 +659,6 @@ fn lpad(mut s: String, n: usize) -> String {
 
 fn get2d<T>(v: &[Vec<T>], i: usize, j: usize) -> Option<&T> {
     v.get(i)?.get(j)
-}
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-struct Cell {
-    ch: u8,
-    fg: Color,
-    bg: Color,
-    attr: Attribute,
-}
-
-impl Cell {
-    fn empty() -> Self {
-        Self {
-            ch: b' ',
-            fg: Color::White,
-            bg: Color::Black,
-            attr: Attribute::Reset,
-        }
-    }
-
-    fn render<T: Write>(&self, q: &mut T) -> Result<(), std::io::Error> {
-        q.queue(style::SetAttribute(self.attr))?;
-        q.queue(style::SetForegroundColor(self.fg))?;
-        q.queue(style::SetBackgroundColor(self.bg))?;
-        q.write_ch(self.ch)?;
-        Ok(())
-    }
-}
-
-struct TerminalDisplay {
-    stdout: std::io::Stdout,
-    prev_chars: Option<Vec<Vec<Cell>>>,
-    chars: Vec<Vec<Cell>>,
-    w: u16,
-    h: u16,
-}
-
-impl TerminalDisplay {
-    fn new() -> Result<Self, std::io::Error> {
-        let (w, h) = terminal::size()?;
-        Ok(Self {
-            stdout: std::io::stdout(),
-            prev_chars: None,
-            chars: Self::init_chars(w, h),
-            w,
-            h,
-        })
-    }
-
-    fn init_chars(w: u16, h: u16) -> Vec<Vec<Cell>> {
-        let mut chars = Vec::with_capacity(h.into());
-        for _ in 0..h {
-            let mut row = Vec::with_capacity(w.into());
-            for _ in 0..w {
-                row.push(Cell::empty());
-            }
-            chars.push(row);
-        }
-        chars
-    }
-
-    fn resize(&mut self, w: u16, h: u16) {
-        self.prev_chars = None;
-        self.chars = Self::init_chars(w, h);
-
-        self.w = w;
-        self.h = h;
-    }
-
-    fn write(&mut self, x: usize, y: usize, ch: Cell) {
-        self.chars[y][x] = ch;
-    }
-
-    fn render(&mut self) -> Result<(), std::io::Error> {
-        //self.stdout.queue(cursor::MoveTo(0, 0))?;
-        for (y, row) in self.chars.iter().enumerate() {
-            if let Some(prev_chars) = &self.prev_chars {
-                for (x, cell) in row.iter().enumerate() {
-                    if &prev_chars[y][x] != cell {
-                        self.stdout.queue(cursor::MoveTo(x as u16, y as u16))?;
-                        cell.render(&mut self.stdout)?;
-                    }
-                }
-            } else {
-                self.stdout.queue(cursor::MoveTo(0, y as u16))?;
-                for cell in row {
-                    cell.render(&mut self.stdout)?;
-                }
-            }
-        }
-        self.stdout.flush()?;
-
-        self.prev_chars = Some(self.chars.clone());
-        self.chars = Self::init_chars(self.w, self.h);
-
-        Ok(())
-    }
-
-    fn clear(&mut self) {
-        for row in self.chars.iter_mut() {
-            row.fill(Cell::empty());
-        }
-    }
-
-    fn queue_clear(&mut self) -> Result<(), std::io::Error> {
-        self.stdout
-            .queue(terminal::Clear(terminal::ClearType::All))?;
-        self.stdout.queue(cursor::MoveTo(0, 0))?;
-        Ok(())
-    }
 }
 
 fn logger(port: u16) -> std::io::Result<Sender<String>> {
