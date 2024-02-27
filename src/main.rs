@@ -128,6 +128,8 @@ impl Editor {
         self.status = status.into();
     }
 
+    // TODO: introduce a better interface for this stuff
+    // I tried to do it but the borrow checker hated me for it
     fn set_status_prompt(&mut self, prompt: String, prompt_type: PromptType) {
         self.cursor.state = CursorState::StatusBar;
         self.cursor.pos.0 = 0;
