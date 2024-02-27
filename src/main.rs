@@ -587,8 +587,8 @@ impl Editor {
         for (x, ch) in (0..self.display.w as usize).zip(status_iter) {
             let cell = Cell {
                 ch,
-                fg: Color::Reset,
-                bg: Color::Reset,
+                fg: Color::White,
+                bg: Color::Black,
                 attr: Attribute::Reset,
             };
             self.display.write(x, y, cell);
@@ -619,8 +619,8 @@ impl Cell {
     fn empty() -> Self {
         Self {
             ch: b' ',
-            fg: Color::Reset,
-            bg: Color::Reset,
+            fg: Color::White,
+            bg: Color::Black,
             attr: Attribute::Reset,
         }
     }
