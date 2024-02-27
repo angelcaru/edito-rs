@@ -75,8 +75,7 @@ const UI_HEIGHT: u16 = 2;
 
 impl Editor {
     fn new() -> Result<Self, std::io::Error> {
-        let mut buf = Vec::new();
-        buf.push(Vec::new());
+        let buf = vec![Vec::new()];
 
         let display = TerminalDisplay::new()?;
         let (w, h) = (display.w - UI_WIDTH, display.h - UI_HEIGHT);
@@ -493,7 +492,7 @@ impl Editor {
                     x,
                     y,
                     Cell {
-                        ch: num_str.bytes().nth(x.into()).unwrap_or(b' '),
+                        ch: num_str.as_bytes().get(x).copied().unwrap_or(b' '),
                         fg: if num == self.cursor.pos.1 {
                             Color::White
                         } else {
@@ -568,7 +567,7 @@ impl Editor {
             .unwrap_or("<temporary buffer>".into());
         for x in 0..self.display.w as usize {
             let cell = Cell {
-                ch: *file_path.as_bytes().get(x).unwrap_or(&b' ') as u8,
+                ch: *file_path.as_bytes().get(x).unwrap_or(&b' '),
                 fg: Color::Black,
                 bg: Color::White,
                 attr: Attribute::Reset,
@@ -583,7 +582,7 @@ impl Editor {
         let status_iter = self
             .status_prompt
             .bytes()
-            .chain(self.status.iter().map(|x| *x))
+            .chain(self.status.iter().copied())
             .chain(std::iter::repeat(b' '));
         for (x, ch) in (0..self.display.w as usize).zip(status_iter) {
             let cell = Cell {
@@ -604,7 +603,7 @@ fn lpad(mut s: String, n: usize) -> String {
     s
 }
 
-fn get2d<T>(v: &Vec<Vec<T>>, i: usize, j: usize) -> Option<&T> {
+fn get2d<T>(v: &[Vec<T>], i: usize, j: usize) -> Option<&T> {
     v.get(i)?.get(j)
 }
 
@@ -757,10 +756,8 @@ fn main() -> Result<(), std::io::Error> {
     editor.display.queue_clear()?;
 
     loop {
-        if poll(polling_rate)? {
-            if editor.handle_event(read()?)? {
-                break;
-            }
+        if poll(polling_rate)? && editor.handle_event(read()?)? {
+            break;
         }
         editor.render()?;
     }
