@@ -620,6 +620,7 @@ impl Editor {
                         self.add_char(b' ');
                     }
                 }
+                self.move_cursor(0, 0);
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Tab,
