@@ -51,9 +51,7 @@ impl Cursor {
             Ordering::Equal => {
                 if ax < bx {
                     (a, b)
-                } else {
-                    (b, a)
-                }
+                } else { (b, a) }
             }
             Ordering::Greater => (b, a),
         }
@@ -367,10 +365,17 @@ impl Editor {
 
     fn backspace(&mut self) -> Option<u8> {
         if self.cursor.pos.0 != 0 {
-            let x = self.cursor.pos.0;
+            let mut x = self.cursor.pos.0;
             let row = self.row();
-            let res = row.remove(x - 1);
-            self.cursor.pos.0 -= 1;
+            if row[..x].ends_with(b"    ") {
+                row.remove(x - 1);
+                row.remove(x - 2);
+                row.remove(x - 3);
+                x -= 3;
+            }
+            x -= 1;
+            let res = row.remove(x);
+            self.cursor.pos.0 = x;
             Some(res)
         } else if self.cursor.pos.1 != 0 {
             if let CursorState::StatusBar = self.cursor.state {
@@ -891,5 +896,6 @@ fn main() -> Result<(), std::io::Error> {
         editor.render()?;
     }
 }
+
 
 
