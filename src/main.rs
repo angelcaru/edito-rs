@@ -1,4 +1,5 @@
 mod display;
+mod lexer;
 
 use crossterm::{
     cursor::{self, MoveTo},
@@ -7,7 +8,6 @@ use crossterm::{
     terminal::{self, Clear},
     ExecutableCommand, QueueableCommand,
 };
-use display::*;
 use std::{
     cmp::Ordering,
     io::{Read, Write},
@@ -18,6 +18,9 @@ use std::{
     thread,
     time::Duration,
 };
+
+use display::*;
+use lexer::*;
 
 pub trait WriteChar {
     fn write_ch(&mut self, ch: u8) -> Result<usize, std::io::Error>;
@@ -632,21 +635,38 @@ impl Editor {
         let (cx, cy) = self.camera_topleft;
 
         for y in 0..self.h as usize {
+            let row_idx = y + cy;
+            let mut words = split_words(&self.buf[row_idx]).into_iter().peekable();
+
             for x in 0..self.w {
                 let x = (x + UI_WIDTH) as usize;
-                let ch = *get2d(&self.buf, y + cy, x + cx - UI_WIDTH as usize).unwrap_or(&b' ');
+                let ch_idx = x + cx - UI_WIDTH as usize;
+                let ch = *get2d(&self.buf, row_idx, ch_idx).unwrap_or(&b' ');
+
+                let mut bg = Color::Black;
+                let mut fg = if let Some(w) = words.peek() {
+                    let w = w.clone();
+                    let (pos, ref word) = w;
+                    if ch_idx == (pos + word.len()) {
+                        words.next();
+                    }
+                    if ch_idx >= pos && ch_idx < (pos + word.len()) {
+                        w.color()
+                    } else {
+                        Color::White
+                    }
+                } else {
+                    Color::White
+                };
+
+                if self.selected(x + cx - UI_WIDTH as usize, y + cy) {
+                    (fg, bg) = (bg, fg);
+                }
+
                 let cell = Cell {
                     ch,
-                    fg: if self.selected(x + cx - UI_WIDTH as usize, y + cy) {
-                        Color::Black
-                    } else {
-                        Color::White
-                    },
-                    bg: if self.selected(x + cx - UI_WIDTH as usize, y + cy) {
-                        Color::White
-                    } else {
-                        Color::Black
-                    },
+                    fg,
+                    bg,
                     attr: Attribute::Reset,
                 };
                 self.display.write(x, y, cell);
