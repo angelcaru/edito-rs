@@ -411,7 +411,7 @@ impl Editor {
 
     fn backspace_word(&mut self) {
         loop {
-            let ch =  self.backspace().map(|ch| ch as char);
+            let ch = self.backspace().map(|ch| ch as char);
             self.log(format!("{:?}", ch));
             let cx = self.cursor.pos.0;
             if cx == 0
@@ -502,10 +502,13 @@ impl Editor {
                     self.cursor.pos.1 += 1;
                     self.cursor.pos.0 = 0;
 
-                    if self.buf[self.cursor.pos.1 - 1].ends_with(b"{") {
-                        while Self::get_indent(self.row()) < indent + 4 {
-                            self.add_char(b' ');
-                        }
+                    let target_indent = if self.buf[self.cursor.pos.1 - 1].ends_with(b"{") {
+                        indent + 4
+                    } else {
+                        indent
+                    };
+                    while Self::get_indent(self.row()) < target_indent {
+                        self.add_char(b' ');
                     }
                 }
             }
