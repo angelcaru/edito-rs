@@ -648,30 +648,23 @@ impl Editor {
                 let ch = *get2d(&self.buf, row_idx, ch_idx).unwrap_or(&b' ');
 
                 let mut bg = Color::Black;
-                let mut fg = if let Some(w) = words.peek() {
-                    let w = w.clone();
-                    let (pos, ref word) = w;
-                    if ch_idx == (pos + word.len()) {
-                        words.next();
-                    }
-                    if ch_idx >= pos && ch_idx < (pos + word.len()) {
-                        w.color()
-                    } else {
-                        Color::White
-                    }
-                } else {
-                    Color::White
-                };
+                let mut fg = get_curr_word(&mut words, ch_idx)
+                    .map(|w| w.color())
+                    .unwrap_or(Color::White);
 
                 if self.selected(x + cx - UI_WIDTH as usize, y + cy) {
                     (fg, bg) = (bg, fg);
                 }
 
+                let attr = get_curr_word(&mut words, ch_idx)
+                    .map(|w| w.attr())
+                    .unwrap_or(Attribute::Reset);
+
                 let cell = Cell {
                     ch,
                     fg,
                     bg,
-                    attr: Attribute::Reset,
+                    attr,
                 };
                 self.display.write(x, y, cell);
             }
@@ -713,6 +706,23 @@ impl Editor {
             };
             self.display.write(x, y, cell);
         }
+    }
+}
+
+fn get_curr_word(
+    words: &mut std::iter::Peekable<std::vec::IntoIter<(usize, String)>>,
+    ch_idx: usize,
+) -> Option<Word> {
+    let w = words.peek()?;
+    let w = w.clone();
+    let (pos, ref word) = w;
+    if ch_idx == (pos + word.len()) {
+        words.next();
+    }
+    if ch_idx >= pos && ch_idx < (pos + word.len()) {
+        Some(w)
+    } else {
+        None
     }
 }
 

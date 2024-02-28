@@ -1,4 +1,4 @@
-use crossterm::style::Color;
+use crossterm::style::{Attribute, Color};
 
 pub type Word = (usize, String);
 
@@ -164,11 +164,12 @@ fn is_string(word: &str) -> bool {
     !word.is_empty() && is_quote(word.as_bytes()[0])
 }
 
-pub trait GetColor {
+pub trait Styled {
     fn color(&self) -> Color;
+    fn attr(&self) -> Attribute;
 }
 
-impl GetColor for Word {
+impl Styled for Word {
     fn color(&self) -> Color {
         if is_keyword(&self.1) {
             Color::Yellow
@@ -180,6 +181,14 @@ impl GetColor for Word {
             Color::Grey
         } else {
             Color::White
+        }
+    }
+
+    fn attr(&self) -> Attribute {
+        if is_keyword(&self.1) {
+            Attribute::Bold
+        } else {
+            Attribute::Reset
         }
     }
 }
