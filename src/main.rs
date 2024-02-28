@@ -327,6 +327,7 @@ impl Editor {
 
         if let Some(sel) = self.cursor.selection_start {
             let ((sx, sy), (cx, cy)) = Cursor::minmax_pos(sel, self.cursor.pos);
+            let cx = std::cmp::min(cx, self.row().len() - 1);
 
             if sy != cy {
                 let post = Vec::from(&self.buf[cy][cx..]);
@@ -890,3 +891,5 @@ fn main() -> Result<(), std::io::Error> {
         editor.render()?;
     }
 }
+
+
