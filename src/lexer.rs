@@ -2,21 +2,46 @@ use crossterm::style::Color;
 
 pub type Word = (usize, String);
 
+fn is_quote(ch: u8) -> bool {
+    ch == b'"' || ch == b'\''
+}
+
 pub fn split_words(mut code: &[u8]) -> Vec<Word> {
+    fn is_ch_usable(ch: u8) -> bool {
+        ch.is_ascii_alphanumeric() || is_quote(ch)
+    }
+
     let mut words = Vec::new();
 
     let mut pos = 0;
     while !code.is_empty() {
-        while !code.is_empty() && !code[0].is_ascii_alphanumeric() {
+        while !code.is_empty() && !is_ch_usable(code[0]) {
             pos += 1;
             code = &code[1..];
         }
 
         let mut word = String::new();
-        while !code.is_empty() && code[0].is_ascii_alphanumeric() {
+
+        if !code.is_empty() && is_quote(code[0]) {
             word.push(code[0] as char);
             pos += 1;
             code = &code[1..];
+            while !code.is_empty() && !is_quote(code[0]) {
+                word.push(code[0] as char);
+                pos += 1;
+                code = &code[1..];
+            }
+            if !code.is_empty() {
+                word.push(code[0] as char);
+                pos += 1;
+                code = &code[1..];
+            }
+        } else {
+            while !code.is_empty() && code[0].is_ascii_alphanumeric() {
+                word.push(code[0] as char);
+                pos += 1;
+                code = &code[1..];
+            }
         }
         words.push((pos - word.len(), word));
     }
@@ -106,6 +131,10 @@ fn is_type(word: &str) -> bool {
     }
 }
 
+fn is_string(word: &str) -> bool {
+    !word.is_empty() && is_quote(word.as_bytes()[0])
+}
+
 pub trait GetColor {
     fn color(&self) -> Color;
 }
@@ -116,6 +145,8 @@ impl GetColor for Word {
             Color::Yellow
         } else if is_type(&self.1) {
             Color::Green
+        } else if is_string(&self.1) {
+            Color::DarkGreen
         } else {
             Color::White
         }

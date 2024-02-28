@@ -648,6 +648,7 @@ impl Editor {
                     let w = w.clone();
                     let (pos, ref word) = w;
                     if ch_idx == (pos + word.len()) {
+                        self.log(word.clone());
                         words.next();
                     }
                     if ch_idx >= pos && ch_idx < (pos + word.len()) {
