@@ -446,7 +446,7 @@ impl Editor {
             }
 
             Event::Key(KeyEvent {
-                code: KeyCode::Char('c'),
+                code: KeyCode::Char('q'),
                 modifiers: KeyModifiers::CONTROL,
                 ..
             }) => {
