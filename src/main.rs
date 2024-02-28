@@ -337,6 +337,9 @@ impl Editor {
 
         if let Some(sel) = self.cursor.selection_start {
             let ((sx, sy), (cx, cy)) = Cursor::minmax_pos(sel, self.cursor.pos);
+            if self.row().is_empty() {
+                self.row().push(b' ');
+            }
             let cx = std::cmp::min(cx, self.row().len() - 1);
 
             if sy != cy {
@@ -985,10 +988,7 @@ fn main() -> Result<(), std::io::Error> {
 
     terminal::enable_raw_mode()?;
     editor.display.queue_clear()?;
-    //editor.display.stdout.queue(PushKeyboardEnhancementFlags(
-    //    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES,
-    //))?;
-
+ 
     loop {
         if poll(polling_rate)? {
             editor.handle_event(read()?)?;
@@ -996,3 +996,4 @@ fn main() -> Result<(), std::io::Error> {
         editor.render()?;
     }
 }
+
