@@ -1014,6 +1014,7 @@ fn main() -> Result<(), std::io::Error> {
 
     terminal::enable_raw_mode()?;
     editor.display.queue_clear()?;
+    #[cfg(unix)]
     editor.display.stdout.queue(PushKeyboardEnhancementFlags(
         KeyboardEnhancementFlags::REPORT_EVENT_TYPES,
     ))?;
