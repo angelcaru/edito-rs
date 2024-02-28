@@ -9,14 +9,7 @@ use crossterm::{
     ExecutableCommand, QueueableCommand,
 };
 use std::{
-    cmp::Ordering,
-    io::{Read, Write},
-    net::{IpAddr, SocketAddr, TcpListener},
-    process::exit,
-    str::FromStr,
-    sync::mpsc::{self, Sender},
-    thread,
-    time::Duration,
+    cmp::Ordering, io::{Read, Write}, net::{IpAddr, SocketAddr, TcpListener}, num::NonZeroUsize, process::exit, str::FromStr, sync::mpsc::{self, Sender}, thread, time::Duration
 };
 
 use display::*;
@@ -265,6 +258,22 @@ impl Editor {
             }
             "save" => {
                 self.save_file().err().map(|err| format!("ERROR: {err}"))
+            }
+            x if x.starts_with(":") => {
+                let (_, line) = x.split_at(1);
+                let Ok(line) = line.parse::<NonZeroUsize>() else {
+                    return "ERROR: invalid line number".into();
+                };
+                let line = line.get();
+
+                if line > self.buf.len() {
+                    return "ERROR: line number too large".into();
+                }
+
+                self.cursor.pos.1 = line - 1;
+                self.move_cursor(0, 0);
+
+                None
             }
             x => Some(format!("ERROR: unknown command: {x:?}"))
         }.unwrap_or_else(|| std::str::from_utf8(&self.status)
