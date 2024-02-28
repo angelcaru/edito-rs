@@ -16,7 +16,7 @@ fn is_ident(ch: u8) -> bool {
 
 pub fn split_words(mut code: &[u8]) -> Vec<Word> {
     fn is_ch_usable(ch: u8) -> bool {
-        is_ident(ch) || is_quote(ch) 
+        is_ident(ch) || is_quote(ch)
     }
 
     let mut words = Vec::new();

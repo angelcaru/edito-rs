@@ -9,7 +9,15 @@ use crossterm::{
     ExecutableCommand, QueueableCommand,
 };
 use std::{
-    cmp::Ordering, io::{Read, Write}, net::{IpAddr, SocketAddr, TcpListener}, num::NonZeroUsize, process::exit, str::FromStr, sync::mpsc::{self, Sender}, thread, time::Duration
+    cmp::Ordering,
+    io::{Read, Write},
+    net::{IpAddr, SocketAddr, TcpListener},
+    num::NonZeroUsize,
+    process::exit,
+    str::FromStr,
+    sync::mpsc::{self, Sender},
+    thread,
+    time::Duration,
 };
 
 use display::*;
@@ -516,7 +524,7 @@ impl Editor {
             if let CursorState::Default = self.cursor.state {
                 y += 1;
             }
-            
+
             self.buf.insert(y, row);
         }
         self.buf[y].extend_from_slice(&post);
@@ -540,6 +548,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('q'),
                 modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
                 if self.unsaved_changes {
@@ -554,21 +563,25 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => self.save_file()?,
             Event::Key(KeyEvent {
                 code: KeyCode::Char('c'),
                 modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => self.copy_text(),
             Event::Key(KeyEvent {
                 code: KeyCode::Char('v'),
                 modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => self.paste_text(),
             Event::Key(KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
                 self.unsaved_changes = true;
@@ -584,6 +597,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
                 if let CursorState::StatusBar = self.cursor.state {
@@ -625,6 +639,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Tab,
                 modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
                 for _ in 0..4 {
@@ -635,6 +650,7 @@ impl Editor {
                 // Ctrl+Backspace == Ctrl+H for some reason
                 code: KeyCode::Backspace | KeyCode::Char('h'),
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::CONTROL => {
                 assert!(self.cursor.pos.1 < self.buf.len());
@@ -652,6 +668,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Delete,
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::CONTROL => {
                 assert!(self.cursor.pos.1 < self.buf.len());
@@ -688,6 +705,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Left,
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
                 self.update_selection(modifiers);
@@ -700,6 +718,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Right,
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
                 self.update_selection(modifiers);
@@ -712,6 +731,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Up,
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
                 self.update_selection(modifiers);
@@ -720,6 +740,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Down,
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
                 self.update_selection(modifiers);
@@ -728,6 +749,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Home,
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
                 self.update_selection(modifiers);
@@ -736,6 +758,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::End,
                 modifiers,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
                 self.update_selection(modifiers);
@@ -744,6 +767,7 @@ impl Editor {
             Event::Key(KeyEvent {
                 code: KeyCode::Esc,
                 modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
                 self.set_status_prompt("Command: ".into(), PromptType::Command);
@@ -797,7 +821,7 @@ impl Editor {
             let num = y + cy;
 
             let num_str = lpad((num + 1).to_string(), 3);
-            let num_str = String::from(&num_str[num_str.len()-3..]);
+            let num_str = String::from(&num_str[num_str.len() - 3..]);
 
             for x in 0..(UI_WIDTH - 1) {
                 let x = x as usize;
@@ -990,7 +1014,10 @@ fn main() -> Result<(), std::io::Error> {
 
     terminal::enable_raw_mode()?;
     editor.display.queue_clear()?;
- 
+    editor.display.stdout.queue(PushKeyboardEnhancementFlags(
+        KeyboardEnhancementFlags::REPORT_EVENT_TYPES,
+    ))?;
+
     loop {
         if poll(polling_rate)? {
             editor.handle_event(read()?)?;
@@ -998,4 +1025,3 @@ fn main() -> Result<(), std::io::Error> {
         editor.render()?;
     }
 }
-
