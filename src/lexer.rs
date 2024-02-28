@@ -6,9 +6,13 @@ fn is_quote(ch: u8) -> bool {
     ch == b'"' || ch == b'\''
 }
 
+fn is_comment(code: &[u8]) -> bool {
+    code.len() >= 2 && code[0] == b'/' && code[1] == b'/'
+}
+
 pub fn split_words(mut code: &[u8]) -> Vec<Word> {
     fn is_ch_usable(ch: u8) -> bool {
-        ch.is_ascii_alphanumeric() || is_quote(ch)
+        ch.is_ascii_alphanumeric() || is_quote(ch) 
     }
 
     let mut words = Vec::new();
@@ -16,8 +20,29 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
     let mut pos = 0;
     while !code.is_empty() {
         while !code.is_empty() && !is_ch_usable(code[0]) {
-            pos += 1;
-            code = &code[1..];
+            if is_comment(code) {
+                let mut word = String::new();
+                word.push(code[0] as char);
+                pos += 1;
+                code = &code[1..];
+                // NOTE: the '\n' case will never show up because we only call this function
+                // on individual lines. It's here just in case that changes.
+                while !code.is_empty() && code[0] != b'\n' {
+                    word.push(code[0] as char);
+                    pos += 1;
+                    code = &code[1..];
+                }
+                if !code.is_empty() {
+                    word.push(code[0] as char);
+                    pos += 1;
+                    code = &code[1..];
+                }
+                words.push((pos - word.len(), word));
+            }
+            if !code.is_empty() {
+                pos += 1;
+                code = &code[1..];
+            }
         }
 
         let mut word = String::new();
@@ -37,6 +62,10 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
                 code = &code[1..];
             }
         } else {
+            while !code.is_empty() && !is_ch_usable(code[0]) {
+                pos += 1;
+                code = &code[1..];
+            }
             while !code.is_empty() && code[0].is_ascii_alphanumeric() {
                 word.push(code[0] as char);
                 pos += 1;
@@ -147,6 +176,8 @@ impl GetColor for Word {
             Color::Green
         } else if is_string(&self.1) {
             Color::DarkGreen
+        } else if is_comment(self.1.as_bytes()) {
+            Color::Grey
         } else {
             Color::White
         }
