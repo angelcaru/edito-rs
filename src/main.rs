@@ -116,6 +116,17 @@ impl Editor {
         })
     }
 
+    fn get_indent(mut row: &[u8]) -> usize {
+        let mut res = 0;
+
+        while !row.is_empty() && row[0].is_ascii_whitespace() {
+            res += 1;
+            row = &row[1..];
+        }
+
+        res
+    }
+
     fn enable_logging(&mut self, port: u16) -> std::io::Result<()> {
         self.logger = Some(logger(port)?);
         self.set_status(format!("Successfully enabled logging on port {port}"));
@@ -412,6 +423,13 @@ impl Editor {
                 ..
             }) => {
                 self.unsaved_changes = true;
+
+                if ch == '}' && self.row().ends_with(b" ") {
+                    for _ in 0..4 {
+                        self.backspace();
+                    }
+                }
+
                 self.add_char(ch as u8);
             }
             Event::Key(KeyEvent {
@@ -426,7 +444,7 @@ impl Editor {
                 self.unsaved_changes = true;
                 if self.cursor.selection_start.is_some() {
                     self.set_status("TODO: handle text selection for the `Enter` key".into());
-                } else {
+                } else if self.cursor.pos.0 != self.row().len() {
                     let (x, y) = &mut self.cursor.pos;
 
                     let (pre, post) = self.buf[*y].split_at(*x);
@@ -436,6 +454,28 @@ impl Editor {
 
                     *y += 1;
                     *x = 0;
+                } else {
+                    let indent = Self::get_indent(self.row());
+
+                    self.buf.insert(self.cursor.pos.1 + 1, Vec::new());
+
+                    self.cursor.pos.1 += 1;
+                    self.cursor.pos.0 = 0;
+
+                    if self.buf[self.cursor.pos.1 - 1].ends_with(b"{") {
+                        while Self::get_indent(self.row()) < indent + 4 {
+                            self.add_char(b' ');
+                        }
+                    }
+                }
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Tab,
+                modifiers: KeyModifiers::NONE,
+                ..
+            }) => {
+                for _ in 0..4 {
+                    self.add_char(b' ');
                 }
             }
             Event::Key(KeyEvent {
@@ -660,12 +700,7 @@ impl Editor {
                     .map(|w| w.attr())
                     .unwrap_or(Attribute::Reset);
 
-                let cell = Cell {
-                    ch,
-                    fg,
-                    bg,
-                    attr,
-                };
+                let cell = Cell { ch, fg, bg, attr };
                 self.display.write(x, y, cell);
             }
         }
