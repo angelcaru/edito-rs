@@ -51,7 +51,9 @@ impl Cursor {
             Ordering::Equal => {
                 if ax < bx {
                     (a, b)
-                } else { (b, a) }
+                } else {
+                    (b, a)
+                }
             }
             Ordering::Greater => (b, a),
         }
@@ -257,16 +259,15 @@ impl Editor {
                     return "ERROR: the \"load\" command expects exactly one argument (without spaces)".into();
                 }
 
-                if let Err(err) = self.load_file(cmd[1].into()) {
-                    format!("ERROR: {err}")
-                } else {
-                    std::str::from_utf8(&self.status)
-                        .expect("that we didn't put garbage into the status")
-                        .into()
-                }
+                self.load_file(cmd[1].into()).err().map(|err| format!("ERROR: {err}"))
             }
-            x => format!("ERROR: unknown command: {x:?}"),
-        }
+            "save" => {
+                self.save_file().err().map(|err| format!("ERROR: {err}"))
+            }
+            x => Some(format!("ERROR: unknown command: {x:?}"))
+        }.unwrap_or_else(|| std::str::from_utf8(&self.status)
+        .expect("that we didn't put garbage into the status")
+        .into())
     }
 
     fn handle_status_prompt(&mut self) -> Result<bool, std::io::Error> {
@@ -896,6 +897,4 @@ fn main() -> Result<(), std::io::Error> {
         editor.render()?;
     }
 }
-
-
 
