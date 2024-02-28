@@ -10,9 +10,13 @@ fn is_comment(code: &[u8]) -> bool {
     code.len() >= 2 && code[0] == b'/' && code[1] == b'/'
 }
 
+fn is_ident(ch: u8) -> bool {
+    ch.is_ascii_alphanumeric() || ch == b'_'
+}
+
 pub fn split_words(mut code: &[u8]) -> Vec<Word> {
     fn is_ch_usable(ch: u8) -> bool {
-        ch.is_ascii_alphanumeric() || is_quote(ch) 
+        is_ident(ch) || is_quote(ch) 
     }
 
     let mut words = Vec::new();
@@ -66,7 +70,7 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
                 pos += 1;
                 code = &code[1..];
             }
-            while !code.is_empty() && code[0].is_ascii_alphanumeric() {
+            while !code.is_empty() && is_ident(code[0]) {
                 word.push(code[0] as char);
                 pos += 1;
                 code = &code[1..];
@@ -180,7 +184,11 @@ impl Styled for Word {
         } else if is_comment(self.1.as_bytes()) {
             Color::Grey
         } else {
-            Color::White
+            Color::Rgb {
+                r: 76,
+                g: 111,
+                b: 217,
+            }
         }
     }
 
