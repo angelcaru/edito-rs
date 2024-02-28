@@ -317,7 +317,7 @@ impl Editor {
             self.cursor.selection_start = Some(self.cursor.pos);
         }
 
-        if modifiers == KeyModifiers::NONE {
+        if !modifiers.contains(KeyModifiers::SHIFT) {
             self.cursor.selection_start = None;
         }
     }
@@ -383,6 +383,25 @@ impl Editor {
             self.buf.remove(self.cursor.pos.1);
 
             self.cursor.pos.1 -= 1;
+        }
+    }
+
+    fn move_cursor_word(&mut self, dir: isize) {
+        assert!(dir == -1 || dir == 1);
+
+        loop {
+            self.move_cursor(dir, 0);
+            let cx = self.cursor.pos.0;
+            if cx == 0
+                || cx == self.row().len()
+                || self
+                    .row()
+                    .get(cx)
+                    .filter(|ch| !ch.is_ascii_alphanumeric())
+                    .is_some()
+            {
+                break;
+            }
         }
     }
 
@@ -525,17 +544,25 @@ impl Editor {
                 code: KeyCode::Left,
                 modifiers,
                 ..
-            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+            }) => {
                 self.update_selection(modifiers);
-                self.move_cursor(-1, 0)
+                if modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_cursor_word(-1)
+                } else {
+                    self.move_cursor(-1, 0)
+                }
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Right,
                 modifiers,
                 ..
-            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::SHIFT => {
+            }) => {
                 self.update_selection(modifiers);
-                self.move_cursor(1, 0)
+                if modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_cursor_word(1)
+                } else {
+                    self.move_cursor(1, 0)
+                }
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Up,
