@@ -364,15 +364,16 @@ impl Editor {
         self.cursor.pos.0 += 1;
     }
 
-    fn backspace(&mut self) {
+    fn backspace(&mut self) -> Option<u8> {
         if self.cursor.pos.0 != 0 {
             let x = self.cursor.pos.0;
             let row = self.row();
-            row.remove(x - 1);
+            let res = row.remove(x - 1);
             self.cursor.pos.0 -= 1;
+            Some(res)
         } else if self.cursor.pos.1 != 0 {
             if let CursorState::StatusBar = self.cursor.state {
-                return;
+                return None;
             }
             let post = self.buf[self.cursor.pos.1].clone();
             let pre = &mut self.buf[self.cursor.pos.1 - 1];
@@ -383,6 +384,9 @@ impl Editor {
             self.buf.remove(self.cursor.pos.1);
 
             self.cursor.pos.1 -= 1;
+            Some(b'\n')
+        } else {
+            None
         }
     }
 
@@ -399,6 +403,23 @@ impl Editor {
                     .get(cx)
                     .filter(|ch| !ch.is_ascii_alphanumeric())
                     .is_some()
+            {
+                break;
+            }
+        }
+    }
+
+    fn backspace_word(&mut self) {
+        loop {
+            let ch =  self.backspace().map(|ch| ch as char);
+            self.log(format!("{:?}", ch));
+            let cx = self.cursor.pos.0;
+            if cx == 0
+                || self
+                    .row()
+                    .get(cx - 1)
+                    .filter(|ch| ch.is_ascii_alphanumeric())
+                    .is_none()
             {
                 break;
             }
@@ -498,24 +519,35 @@ impl Editor {
                 }
             }
             Event::Key(KeyEvent {
-                code: KeyCode::Backspace,
-                modifiers: KeyModifiers::NONE,
+                // Ctrl+Backspace == Ctrl+H for some reason
+                code: KeyCode::Backspace | KeyCode::Char('h'),
+                modifiers,
                 ..
-            }) => {
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::CONTROL => {
                 assert!(self.cursor.pos.1 < self.buf.len());
 
                 if self.cursor.selection_start.is_some() {
                     self.add_char(0);
                 }
-                self.backspace();
+                if modifiers.contains(KeyModifiers::CONTROL) {
+                    self.backspace_word();
+                } else {
+                    self.backspace();
+                }
                 self.unsaved_changes = true;
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Delete,
-                modifiers: KeyModifiers::NONE,
+                modifiers,
                 ..
-            }) => {
+            }) if modifiers == KeyModifiers::NONE || modifiers == KeyModifiers::CONTROL => {
                 assert!(self.cursor.pos.1 < self.buf.len());
+
+                if modifiers.contains(KeyModifiers::CONTROL) {
+                    self.move_cursor_word(1);
+                    self.backspace_word();
+                    return Ok(false);
+                }
 
                 if self.cursor.selection_start.is_some() {
                     self.add_char(0);
@@ -844,6 +876,9 @@ fn main() -> Result<(), std::io::Error> {
 
     terminal::enable_raw_mode()?;
     editor.display.queue_clear()?;
+    //editor.display.stdout.queue(PushKeyboardEnhancementFlags(
+    //    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES,
+    //))?;
 
     loop {
         if poll(polling_rate)? {
