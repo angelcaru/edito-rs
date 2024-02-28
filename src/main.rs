@@ -85,6 +85,7 @@ struct Editor {
     prompt_type: Option<PromptType>,
     logger: Option<Sender<String>>,
     unsaved_changes: bool,
+    clipboard: Option<Vec<Vec<u8>>>,
 }
 
 const UI_WIDTH: u16 = 4;
@@ -113,6 +114,7 @@ impl Editor {
             logger: None,
             prompt_type: None,
             unsaved_changes: true,
+            clipboard: None,
         })
     }
 
@@ -433,6 +435,84 @@ impl Editor {
         }
     }
 
+    fn copy_text(&mut self) {
+        let Some(sel) = self.cursor.selection_start else {
+            return;
+        };
+        let ((sx, sy), (cx, cy)) = Cursor::minmax_pos(sel, self.cursor.pos);
+
+        if self.clipboard.is_none() {
+            self.clipboard = Some(Vec::new());
+        } else {
+            self.clipboard.as_mut().unwrap().clear();
+        }
+
+        if self.buf[cy].is_empty() {
+            self.buf[cy].push(b' ');
+        }
+        let cx = std::cmp::min(cx, self.buf[cy].len() - 1);
+
+        let clipboard = self.clipboard.as_mut().unwrap();
+
+        clipboard.push(Vec::new());
+        if sy == cy {
+            clipboard[0].extend_from_slice(&self.buf[cy][sx..=cx]);
+        } else {
+            // First line
+            clipboard[0].extend_from_slice(&self.buf[sy][sx..]);
+
+            // The rest
+            for i in (sy + 1)..cy {
+                clipboard.push(self.buf[i].clone());
+            }
+
+            // Last line
+            clipboard.push(Vec::new());
+            clipboard
+                .last_mut()
+                .unwrap()
+                .extend_from_slice(&self.buf[cy][..=cx]);
+        }
+    }
+
+    fn paste_text(&mut self) {
+        if self.clipboard.is_none() {
+            self.set_status("ERROR: attempt to paste with no clipboard".into());
+            return;
+        }
+
+        self.cursor.selection_start = None;
+
+        let (cx, cy) = self.cursor.pos;
+        let post = Vec::from(&self.row()[cx..]);
+        self.row().resize(cx, b' ');
+
+        let mut clipboard = self
+            .clipboard
+            .as_mut()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter();
+        let mut y = cy;
+
+        let row = clipboard.next().expect("We never create empty clipboards");
+        self.row().extend_from_slice(&row);
+
+        for row in clipboard {
+            if let CursorState::Default = self.cursor.state {
+                y += 1;
+            }
+            
+            self.buf.insert(y, row);
+        }
+        self.buf[y].extend_from_slice(&post);
+
+        self.cursor.pos.1 = y;
+        self.cursor.pos.0 = self.row().len();
+    }
+
     fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
         if let CursorState::Default = self.cursor.state {
             self.status = Vec::new();
@@ -464,6 +544,16 @@ impl Editor {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             }) => self.save_file()?,
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('c'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }) => self.copy_text(),
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('v'),
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }) => self.paste_text(),
             Event::Key(KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
@@ -897,4 +987,3 @@ fn main() -> Result<(), std::io::Error> {
         editor.render()?;
     }
 }
-
