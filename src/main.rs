@@ -636,6 +636,9 @@ impl Editor {
 
         for y in 0..self.h as usize {
             let row_idx = y + cy;
+            if row_idx >= self.buf.len() {
+                break;
+            }
             let mut words = split_words(&self.buf[row_idx]).into_iter().peekable();
 
             for x in 0..self.w {
