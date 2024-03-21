@@ -91,11 +91,13 @@ struct Editor {
 const UI_WIDTH: u16 = 4;
 const UI_HEIGHT: u16 = 2;
 
+const BLACK: Color = rgb_color(0x18, 0x18, 0x18);
 impl Editor {
     fn new() -> Result<Self, std::io::Error> {
         let buf = vec![Vec::new()];
 
-        let display = TerminalDisplay::new()?;
+        let mut display = TerminalDisplay::new()?;
+
         let (w, h) = (display.w - UI_WIDTH, display.h - UI_HEIGHT);
         Ok(Self {
             display,
@@ -785,7 +787,18 @@ impl Editor {
 
     fn render(&mut self) -> Result<(), std::io::Error> {
         use crossterm::cursor::SetCursorStyle;
-        self.display.clear();
+        
+        // TODO: this should really be in crossterm-display
+        for x in 0..self.display.w as usize {
+            for y in 0..self.display.h as usize {
+                self.display.write(x, y, Cell {
+                    ch: b' ',
+                    fg: Color::White,
+                    bg: BLACK,
+                    attr: Attribute::Reset,
+                });
+            }
+        }
 
         self.display
             .stdout
@@ -890,7 +903,7 @@ impl Editor {
                 let ch_idx = x + cx - UI_WIDTH as usize;
                 let ch = *get2d(&self.buf, row_idx, ch_idx).unwrap_or(&b' ');
 
-                let mut bg = Color::Black;
+                let mut bg = BLACK;
                 let mut fg = get_curr_word(&mut words, ch_idx)
                     .map(|w| w.color())
                     .unwrap_or(Color::White);
@@ -919,7 +932,7 @@ impl Editor {
         for x in 0..self.display.w as usize {
             let cell = Cell {
                 ch: *file_path.as_bytes().get(x).unwrap_or(&b' '),
-                fg: Color::Black,
+                fg: BLACK,
                 bg: Color::White,
                 attr: Attribute::Reset,
             };
@@ -939,7 +952,7 @@ impl Editor {
             let cell = Cell {
                 ch,
                 fg: Color::White,
-                bg: Color::Black,
+                bg: BLACK,
                 attr: Attribute::Reset,
             };
             self.display.write(x, y, cell);

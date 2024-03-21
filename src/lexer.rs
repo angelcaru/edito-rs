@@ -180,7 +180,7 @@ fn is_string(word: &str) -> bool {
     !word.is_empty() && is_quote(word.as_bytes()[0])
 }
 
-fn rgb_color(r: u8, g: u8, b: u8) -> Color {
+pub const fn rgb_color(r: u8, g: u8, b: u8) -> Color {
     Color::Rgb { r, g, b }
 }
 
