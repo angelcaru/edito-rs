@@ -1,4 +1,3 @@
-mod display;
 mod lexer;
 
 use crossterm::{
@@ -20,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use display::*;
+use crossterm_display::*;
 use lexer::*;
 
 pub trait WriteChar {

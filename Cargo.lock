@@ -43,6 +43,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossterm-display"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d6fd721b4c7fda11dac7fce0ef175512014b18d3aab77178295df9e91f13679"
+dependencies = [
+ "crossterm",
+]
+
+[[package]]
 name = "crossterm_winapi"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -56,6 +65,7 @@ name = "edito-rs"
 version = "0.1.0"
 dependencies = [
  "crossterm",
+ "crossterm-display",
 ]
 
 [[package]]
