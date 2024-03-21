@@ -170,23 +170,8 @@ fn is_keyword(word: &str) -> bool {
 
 fn is_type(word: &str) -> bool {
     match word {
-        "i8" => true,
-        "i16" => true,
-        "i32" => true,
-        "i64" => true,
-        "i128" => true,
-        "isize" => true,
-        "u8" => true,
-        "u16" => true,
-        "u32" => true,
-        "u64" => true,
-        "u128" => true,
-        "usize" => true,
-        "f32" => true,
-        "f64" => true,
-        "char" => true,
-        "bool" => true,
-        "str" => true,
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64" | "u128"
+        | "usize" | "f32" | "f64" | "char" | "bool" | "str" => true,
         w => w.chars().next().filter(char::is_ascii_uppercase).is_some() && !w.contains('_'),
     }
 }
