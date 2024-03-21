@@ -87,7 +87,7 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
                 code = &code[1..];
             }
         }
-        if code.get(0).filter(|ch| ch == &&b'!').is_some() {
+        if code.first().filter(|ch| ch == &&b'!').is_some() {
             word.push(code[0] as char);
             pos += 1;
             code = &code[1..];
@@ -101,7 +101,7 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
             words.push(Word {
                 col: pos - word.len(),
                 text: word,
-                is_fn: code.get(0).filter(|ch| ch == &&b'(').is_some(),
+                is_fn: code.first().filter(|ch| ch == &&b'(').is_some(),
                 is_macro: false,
             });
         }
@@ -111,62 +111,61 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
 }
 
 fn is_keyword(word: &str) -> bool {
-    match word {
-        "as" => true,
-        "break" => true,
-        "const" => true,
-        "continue" => true,
-        "crate" => true,
-        "else" => true,
-        "enum" => true,
-        "extern" => true,
-        "false" => true,
-        "fn" => true,
-        "for" => true,
-        "if" => true,
-        "impl" => true,
-        "in" => true,
-        "let" => true,
-        "loop" => true,
-        "match" => true,
-        "mod" => true,
-        "move" => true,
-        "mut" => true,
-        "pub" => true,
-        "ref" => true,
-        "return" => true,
-        "self" => true,
-        "Self" => true,
-        "static" => true,
-        "struct" => true,
-        "super" => true,
-        "trait" => true,
-        "true" => true,
-        "type" => true,
-        "unsafe" => true,
-        "use" => true,
-        "where" => true,
-        "while" => true,
-        "async" => true,
-        "await" => true,
-        "dyn" => true,
-        "abstract" => true,
-        "become" => true,
-        "box" => true,
-        "do" => true,
-        "final" => true,
-        "macro" => true,
-        "override" => true,
-        "priv" => true,
-        "typeof" => true,
-        "unsized" => true,
-        "virtual" => true,
-        "yield" => true,
-        "try" => true,
-        "macro_rules" => true,
-        "union" => true,
-        _ => false,
-    }
+    matches!(
+        word,
+        "as" | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "Self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "dyn"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+            | "try"
+            | "macro_rules"
+            | "union"
+    )
 }
 
 fn is_type(word: &str) -> bool {
@@ -225,9 +224,7 @@ impl Styled for Word {
     }
 
     fn attr(&self) -> Attribute {
-        if is_keyword(&self.text) {
-            Attribute::Bold
-        } else if self.is_fn {
+        if is_keyword(&self.text) || self.is_fn {
             Attribute::Bold
         } else {
             Attribute::Reset

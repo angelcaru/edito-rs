@@ -274,7 +274,7 @@ impl Editor {
             "save" => {
                 self.save_file().err().map(|err| format!("ERROR: {err}"))
             }
-            x if x.starts_with(":") => {
+            x if x.starts_with(':') => {
                 let (_, line) = x.split_at(1);
                 let Ok(line) = line.parse::<NonZeroUsize>() else {
                     return "ERROR: invalid line number".into();
@@ -514,14 +514,9 @@ impl Editor {
         let post = Vec::from(&self.row()[cx..]);
         self.row().resize(cx, b' ');
 
-        let mut clipboard = self
-            .clipboard
-            .as_mut()
-            .unwrap()
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .into_iter();
+        // borrow checker hates clippy
+        #[allow(clippy::unnecessary_to_owned)]
+        let mut clipboard = self.clipboard.as_mut().unwrap().to_vec().into_iter();
         let mut y = cy;
 
         let row = clipboard.next().expect("We never create empty clipboards");
