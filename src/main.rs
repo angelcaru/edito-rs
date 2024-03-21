@@ -209,6 +209,14 @@ impl Editor {
         }
     }
 
+    fn prev_row(&mut self) -> Option<&mut Vec<u8>> {
+        let cy = self.cursor.pos.1;
+        match self.cursor.state {
+            CursorState::Default if cy > 0 => Some(&mut self.buf[cy - 1]),
+            _ => None,
+        }
+    }
+
     fn move_cursor(&mut self, dx: isize, dy: isize) {
         assert!(
             dx == 0 || dy == 0,
@@ -585,9 +593,13 @@ impl Editor {
             }) => {
                 self.unsaved_changes = true;
 
-                if ch == '}' && self.row().ends_with(b" ") {
-                    for _ in 0..4 {
-                        self.backspace();
+                if let ('}', Some(curr_indent)) = (ch, self.prev_row().map(|v| Self::get_indent(v)))
+                {
+                    if curr_indent >= 4 {
+                        let target_indent = curr_indent - 4;
+                        while Self::get_indent(self.row()) > target_indent {
+                            self.backspace();
+                        }
                     }
                 }
 
