@@ -953,12 +953,16 @@ impl Editor {
 }
 
 fn get_curr_word(
-    words: &mut std::iter::Peekable<std::vec::IntoIter<(usize, String)>>,
+    words: &mut std::iter::Peekable<std::vec::IntoIter<Word>>,
     ch_idx: usize,
 ) -> Option<Word> {
     let w = words.peek()?;
     let w = w.clone();
-    let (pos, ref word) = w;
+    let Word {
+        col: pos,
+        text: ref word,
+        ..
+    } = w;
     if ch_idx == (pos + word.len()) {
         words.next();
     }
