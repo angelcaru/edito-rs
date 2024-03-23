@@ -651,8 +651,8 @@ impl Editor {
             }) => {
                 self.unsaved_changes = true;
 
-                if let ('}', Some(curr_indent)) = (ch, self.prev_row().map(|v| Self::get_indent(v)))
-                {
+                if ch == '}' {
+                    let curr_indent = Self::get_indent(self.row());
                     if curr_indent >= 4 {
                         let target_indent = curr_indent - 4;
                         while Self::get_indent(self.row()) > target_indent {
