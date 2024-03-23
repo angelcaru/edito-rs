@@ -213,13 +213,13 @@ impl Editor {
         }
     }
 
-    fn prev_row(&mut self) -> Option<&mut Vec<u8>> {
-        let cy = self.cursor.pos.1;
-        match self.cursor.state {
-            CursorState::Default if cy > 0 => Some(&mut self.buf[cy - 1]),
-            _ => None,
-        }
-    }
+//    fn prev_row(&mut self) -> Option<&mut Vec<u8>> {
+//        let cy = self.cursor.pos.1;
+//        match self.cursor.state {
+//            CursorState::Default if cy > 0 => Some(&mut self.buf[cy - 1]),
+//            _ => None,
+//        }
+//    }
 
     fn move_cursor(&mut self, dx: isize, dy: isize) {
         assert!(
@@ -246,7 +246,7 @@ impl Editor {
 
         self.update_camera();
     }
-    
+
     fn update_camera(&mut self) {
         let (cx, cy) = &mut self.camera_topleft;
         while self.cursor.pos.1 < *cy {
@@ -349,7 +349,7 @@ impl Editor {
         fn vec_find(needle: &[u8], haystack: &[u8]) -> Option<usize> {
             let mut needle_idx = 0;
             let mut match_start = 0;
-            for (i, ch) in haystack.into_iter().enumerate() {
+            for (i, ch) in haystack.iter().enumerate() {
                 if *ch == needle[needle_idx] {
                     if needle_idx == 0 {
                         match_start = i;
@@ -384,7 +384,10 @@ impl Editor {
             }
         }
         if !found {
-            self.set_status(format!("Pattern not found: {query:?}", query = std::str::from_utf8(&query).unwrap()));
+            self.set_status(format!(
+                "Pattern not found: {query:?}",
+                query = std::str::from_utf8(&query).unwrap()
+            ));
         }
 
         self.cursor.state = CursorState::Default;
