@@ -60,9 +60,11 @@ impl Cursor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CursorState {
     Default,
     StatusBar,
+    Find,
 }
 
 #[derive(Clone, Copy)]
@@ -96,7 +98,7 @@ impl Editor {
     fn new() -> Result<Self, std::io::Error> {
         let buf = vec![Vec::new()];
 
-        let mut display = TerminalDisplay::new()?;
+        let display = TerminalDisplay::new()?;
 
         let (w, h) = (display.w - UI_WIDTH, display.h - UI_HEIGHT);
         Ok(Self {
@@ -207,7 +209,7 @@ impl Editor {
     fn row(&mut self) -> &mut Vec<u8> {
         match self.cursor.state {
             CursorState::Default => &mut self.buf[self.cursor.pos.1],
-            CursorState::StatusBar => &mut self.status,
+            CursorState::StatusBar | CursorState::Find => &mut self.status,
         }
     }
 
@@ -242,6 +244,10 @@ impl Editor {
             self.cursor.pos.0 = self.row().len()
         }
 
+        self.update_camera();
+    }
+    
+    fn update_camera(&mut self) {
         let (cx, cy) = &mut self.camera_topleft;
         while self.cursor.pos.1 < *cy {
             *cy -= 1;
@@ -339,6 +345,52 @@ impl Editor {
         Ok(false)
     }
 
+    fn handle_find(&mut self) -> Result<bool, std::io::Error> {
+        fn vec_find(needle: &[u8], haystack: &[u8]) -> Option<usize> {
+            let mut needle_idx = 0;
+            let mut match_start = 0;
+            for (i, ch) in haystack.into_iter().enumerate() {
+                if *ch == needle[needle_idx] {
+                    if needle_idx == 0 {
+                        match_start = i;
+                    }
+                    needle_idx += 1;
+                    if needle_idx >= needle.len() {
+                        return Some(match_start);
+                    }
+                } else {
+                    needle_idx = 0;
+                }
+            }
+            None
+        }
+
+        assert_eq!(self.cursor.state, CursorState::Find);
+        let query = self.row();
+        if query.is_empty() {
+            return Ok(false);
+        }
+        let query = query.clone();
+        let curr_line = self.cursor.pos.1;
+
+        let mut found = false;
+        for (line, row) in self.buf.iter().enumerate().skip(curr_line) {
+            if let Some(col) = vec_find(&query, row) {
+                self.cursor.pos = (col, line);
+                self.cursor.selection_start = Some((col + query.len() - 1, line));
+                self.update_camera();
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            self.set_status(format!("Pattern not found: {query:?}", query = std::str::from_utf8(&query).unwrap()));
+        }
+
+        self.cursor.state = CursorState::Default;
+        Ok(false)
+    }
+
     fn update_selection(&mut self, modifiers: KeyModifiers) {
         if self.cursor.selection_start.is_none() {
             self.cursor.selection_start = Some(self.cursor.pos);
@@ -410,9 +462,7 @@ impl Editor {
             self.cursor.pos.0 = x;
             Some(res)
         } else if self.cursor.pos.1 != 0 {
-            if let CursorState::StatusBar = self.cursor.state {
-                return None;
-            }
+            assert_eq!(self.cursor.state, CursorState::Default);
             let post = self.buf[self.cursor.pos.1].clone();
             let pre = &mut self.buf[self.cursor.pos.1 - 1];
 
@@ -504,6 +554,11 @@ impl Editor {
         }
     }
 
+    fn begin_find(&mut self) {
+        self.cursor.state = CursorState::Find;
+        self.cursor.pos.0 = 0;
+    }
+
     fn paste_text(&mut self) {
         if self.clipboard.is_none() {
             self.set_status("ERROR: attempt to paste with no clipboard".into());
@@ -583,6 +638,12 @@ impl Editor {
                 ..
             }) => self.paste_text(),
             Event::Key(KeyEvent {
+                code: KeyCode::Char('f'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }) => self.begin_find(),
+            Event::Key(KeyEvent {
                 code: KeyCode::Char(ch),
                 modifiers: KeyModifiers::NONE | KeyModifiers::SHIFT,
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
@@ -608,14 +669,20 @@ impl Editor {
                 kind: KeyEventKind::Press | KeyEventKind::Repeat,
                 ..
             }) => {
-                if let CursorState::StatusBar = self.cursor.state {
-                    return self.handle_status_prompt();
+                match self.cursor.state {
+                    CursorState::Default => {}
+                    CursorState::StatusBar => return self.handle_status_prompt(),
+                    CursorState::Find => return self.handle_find(),
                 }
 
                 self.unsaved_changes = true;
                 if self.cursor.selection_start.is_some() {
                     self.set_status("TODO: handle text selection for the `Enter` key".into());
                 } else if self.cursor.pos.0 != self.row().len() {
+                    {
+                        let row = format!("{:?}", self.row());
+                        self.log(row);
+                    }
                     let (x, y) = &mut self.cursor.pos;
 
                     let (pre, post) = self.buf[*y].split_at(*x);
@@ -697,14 +764,16 @@ impl Editor {
                         let x = self.cursor.pos.0;
                         self.row().remove(x);
                     } else if self.cursor.pos.1 != self.buf.len() - 1 {
-                        if let CursorState::StatusBar = self.cursor.state {
-                            return Ok(false);
-                        }
-                        let post = self.buf[self.cursor.pos.1 + 1].clone();
-                        let pre = &mut self.buf[self.cursor.pos.1];
+                        match self.cursor.state {
+                            CursorState::Default => {
+                                let post = self.buf[self.cursor.pos.1 + 1].clone();
+                                let pre = &mut self.buf[self.cursor.pos.1];
 
-                        pre.extend(post);
-                        self.buf.remove(self.cursor.pos.1 + 1);
+                                pre.extend(post);
+                                self.buf.remove(self.cursor.pos.1 + 1);
+                            }
+                            CursorState::StatusBar | CursorState::Find => return Ok(false),
+                        }
                     }
                 }
                 self.unsaved_changes = true;
@@ -787,16 +856,20 @@ impl Editor {
 
     fn render(&mut self) -> Result<(), std::io::Error> {
         use crossterm::cursor::SetCursorStyle;
-        
+
         // TODO: this should really be in crossterm-display
         for x in 0..self.display.w as usize {
             for y in 0..self.display.h as usize {
-                self.display.write(x, y, Cell {
-                    ch: b' ',
-                    fg: Color::White,
-                    bg: BLACK,
-                    attr: Attribute::Reset,
-                });
+                self.display.write(
+                    x,
+                    y,
+                    Cell {
+                        ch: b' ',
+                        fg: Color::White,
+                        bg: BLACK,
+                        attr: Attribute::Reset,
+                    },
+                );
             }
         }
 
@@ -818,10 +891,11 @@ impl Editor {
         let (cx, cy) = self.camera_topleft;
 
         let (x, y) = self.cursor.pos;
-        let (x, y) = if let CursorState::StatusBar = self.cursor.state {
-            (x - cx + self.status_prompt.len(), (self.h + 1) as usize)
-        } else {
-            (x - cx + UI_WIDTH as usize, y - cy)
+        let (x, y) = match self.cursor.state {
+            CursorState::Default => (x - cx + UI_WIDTH as usize, y - cy),
+            CursorState::StatusBar | CursorState::Find => {
+                (x - cx + self.status_prompt.len(), (self.h + 1) as usize)
+            }
         };
 
         self.display
