@@ -22,8 +22,8 @@ pub const fn rgb_color(r: u8, g: u8, b: u8) -> Color {
     Color::Rgb { r, g, b }
 }
 
-mod rust;
 mod plaintext;
+mod rust;
 
 const LANGS: &[(&str, &str, &dyn Language)] = &[
     ("rust", "rs", &rust::Rust),
@@ -44,4 +44,3 @@ pub fn lang_from_extension(ext: &str) -> Option<&'static dyn Language> {
         .find(|(_, ext_name, _)| *ext_name == ext)
         .map(|(_, _, lang)| *lang)
 }
-

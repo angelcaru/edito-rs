@@ -294,7 +294,7 @@ impl Editor {
                 if cmd.len() != 2 {
                     return "ERROR: the \"lang\" command expects exactly one argument (without spaces)".into();
                 }
-                if let Some(lang) = lang_from_name(&cmd[1]) {
+                if let Some(lang) = lang_from_name(cmd[1]) {
                     self.language = Box::new(lang);
                     None
                 } else {
@@ -1127,7 +1127,8 @@ fn main() -> Result<(), std::io::Error> {
     let _ = args.next();
 
     let polling_rate = Duration::from_secs_f64(0.01);
-    let mut editor = Editor::new(lang_from_name(DEFAULT_LANG).expect("default language should exist"))?;
+    let mut editor =
+        Editor::new(lang_from_name(DEFAULT_LANG).expect("default language should exist"))?;
 
     if let Some(file_path) = args.next() {
         editor.load_file(file_path)?;

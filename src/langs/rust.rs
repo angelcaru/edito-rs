@@ -82,7 +82,6 @@ fn is_type(word: &str) -> bool {
 pub struct Rust;
 
 impl Language for Rust {
-
     fn split_words(&self, mut code: &[u8]) -> Vec<Word> {
         fn is_ch_usable(ch: u8) -> bool {
             is_ident(ch) || is_quote(ch)
