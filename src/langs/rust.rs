@@ -127,10 +127,11 @@ impl Language for Rust {
             let attr;
 
             if !code.is_empty() && is_quote(code[0]) {
+                let quote = code[0];
                 word.push(code[0] as char);
                 pos += 1;
                 code = &code[1..];
-                while !code.is_empty() && !is_quote(code[0]) {
+                while !code.is_empty() && code[0] != quote {
                     word.push(code[0] as char);
                     pos += 1;
                     code = &code[1..];
@@ -188,3 +189,4 @@ impl Language for Rust {
         ch == '}'
     }
 }
+
