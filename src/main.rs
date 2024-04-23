@@ -1,4 +1,4 @@
-mod lexer;
+mod langs;
 
 use crossterm::{
     cursor::{self, MoveTo},
@@ -20,7 +20,7 @@ use std::{
 };
 
 use crossterm_display::*;
-use lexer::*;
+use langs::*;
 
 pub trait WriteChar {
     fn write_ch(&mut self, ch: u8) -> Result<usize, std::io::Error>;
@@ -88,6 +88,7 @@ struct Editor {
     logger: Option<Sender<String>>,
     unsaved_changes: bool,
     clipboard: Option<Vec<Vec<u8>>>,
+    language: Box<dyn Language>,
 }
 
 const UI_WIDTH: u16 = 4;
@@ -95,7 +96,7 @@ const UI_HEIGHT: u16 = 2;
 
 const BLACK: Color = rgb_color(0x18, 0x18, 0x18);
 impl Editor {
-    fn new() -> Result<Self, std::io::Error> {
+    fn new<Lang: Language + 'static>(language: Lang) -> Result<Self, std::io::Error> {
         let buf = vec![Vec::new()];
 
         let display = TerminalDisplay::new()?;
@@ -119,6 +120,7 @@ impl Editor {
             prompt_type: None,
             unsaved_changes: true,
             clipboard: None,
+            language: Box::new(language),
         })
     }
 
@@ -181,6 +183,12 @@ impl Editor {
         self.set_status(format!("Successfully loaded file {}", file_path));
         self.unsaved_changes = false;
 
+        if let Some(ext) = file_path.split('.').last() {
+            let default_lang = lang_from_name(DEFAULT_LANG).expect("default language should exist");
+            let lang = lang_from_extension(ext).unwrap_or(default_lang);
+            self.language = Box::new(lang);
+        }
+
         Ok(())
     }
 
@@ -213,13 +221,13 @@ impl Editor {
         }
     }
 
-//    fn prev_row(&mut self) -> Option<&mut Vec<u8>> {
-//        let cy = self.cursor.pos.1;
-//        match self.cursor.state {
-//            CursorState::Default if cy > 0 => Some(&mut self.buf[cy - 1]),
-//            _ => None,
-//        }
-//    }
+    //    fn prev_row(&mut self) -> Option<&mut Vec<u8>> {
+    //        let cy = self.cursor.pos.1;
+    //        match self.cursor.state {
+    //            CursorState::Default if cy > 0 => Some(&mut self.buf[cy - 1]),
+    //            _ => None,
+    //        }
+    //    }
 
     fn move_cursor(&mut self, dx: isize, dy: isize) {
         assert!(
@@ -281,6 +289,17 @@ impl Editor {
             }
             "save" => {
                 self.save_file().err().map(|err| format!("ERROR: {err}"))
+            }
+            "lang" => {
+                if cmd.len() != 2 {
+                    return "ERROR: the \"lang\" command expects exactly one argument (without spaces)".into();
+                }
+                if let Some(lang) = lang_from_name(cmd[1]) {
+                    self.language = Box::new(lang);
+                    None
+                } else {
+                    format!("ERROR: unknown language: {}", cmd[1]).into()
+                }
             }
             x if x.starts_with(':') => {
                 let (_, line) = x.split_at(1);
@@ -973,7 +992,11 @@ impl Editor {
             if row_idx >= self.buf.len() {
                 break;
             }
-            let mut words = split_words(&self.buf[row_idx]).into_iter().peekable();
+            let mut words = self
+                .language
+                .split_words(&self.buf[row_idx])
+                .into_iter()
+                .peekable();
 
             for x in 0..self.w {
                 let x = (x + UI_WIDTH) as usize;
@@ -982,7 +1005,7 @@ impl Editor {
 
                 let mut bg = BLACK;
                 let mut fg = get_curr_word(&mut words, ch_idx)
-                    .map(|w| w.color())
+                    .map(|w| w.color)
                     .unwrap_or(Color::White);
 
                 if self.selected(x + cx - UI_WIDTH as usize, y + cy) {
@@ -990,7 +1013,7 @@ impl Editor {
                 }
 
                 let attr = get_curr_word(&mut words, ch_idx)
-                    .map(|w| w.attr())
+                    .map(|w| w.attr)
                     .unwrap_or(Attribute::Reset);
 
                 let cell = Cell { ch, fg, bg, attr };
@@ -1104,7 +1127,8 @@ fn main() -> Result<(), std::io::Error> {
     let _ = args.next();
 
     let polling_rate = Duration::from_secs_f64(0.01);
-    let mut editor = Editor::new()?;
+    let mut editor =
+        Editor::new(lang_from_name(DEFAULT_LANG).expect("default language should exist"))?;
 
     if let Some(file_path) = args.next() {
         editor.load_file(file_path)?;
