@@ -4,8 +4,10 @@ use crossterm::style::{Attribute, Color};
 pub struct Word {
     pub col: usize,
     pub text: String,
-    pub is_fn: bool,
-    pub is_macro: bool,
+    pub color: Color,
+    pub attr: Attribute,
+    //pub is_fn: bool,
+    //pub is_macro: bool,
 }
 
 fn is_quote(ch: u8) -> bool {
@@ -50,8 +52,8 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
                 words.push(Word {
                     col: pos - word.len(),
                     text: word,
-                    is_fn: false,
-                    is_macro: false,
+                    color: rgb_color(100, 100, 100),
+                    attr: Attribute::Italic,
                 });
             }
             if !code.is_empty() {
@@ -61,6 +63,8 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
         }
 
         let mut word = String::new();
+        let color;
+        let attr;
 
         if !code.is_empty() && is_quote(code[0]) {
             word.push(code[0] as char);
@@ -76,6 +80,8 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
                 pos += 1;
                 code = &code[1..];
             }
+            color = Color::DarkGreen;
+            attr = Attribute::Reset;
         } else {
             while !code.is_empty() && !is_ch_usable(code[0]) {
                 pos += 1;
@@ -86,25 +92,29 @@ pub fn split_words(mut code: &[u8]) -> Vec<Word> {
                 pos += 1;
                 code = &code[1..];
             }
+            if code.first().filter(|ch| ch == &&b'!').is_some() {
+                color = Color::DarkGreen;
+                attr = Attribute::Reset;
+            } else if code.first().filter(|ch| ch == &&b'(').is_some() {
+                color = rgb_color(140, 201, 26);
+                attr = Attribute::Bold;
+            } else if is_keyword(&word) {
+                color = Color::Yellow;
+                attr = Attribute::Bold;
+            } else if is_type(&word) {
+                color = Color::Green;
+                attr = Attribute::Reset;
+            } else {
+                color = rgb_color(76, 111, 217);
+                attr = Attribute::Reset;
+            }
         }
-        if code.first().filter(|ch| ch == &&b'!').is_some() {
-            word.push(code[0] as char);
-            pos += 1;
-            code = &code[1..];
-            words.push(Word {
-                col: pos - word.len(),
-                text: word,
-                is_fn: false,
-                is_macro: true,
-            });
-        } else {
-            words.push(Word {
-                col: pos - word.len(),
-                text: word,
-                is_fn: code.first().filter(|ch| ch == &&b'(').is_some(),
-                is_macro: false,
-            });
-        }
+        words.push(Word {
+            col: pos - word.len(),
+            text: word,
+            color,
+            attr,
+        });
     }
 
     words
@@ -191,28 +201,30 @@ pub trait Styled {
 
 impl Styled for Word {
     fn color(&self) -> Color {
-        if is_keyword(&self.text) {
-            Color::Yellow
-        } else if is_type(&self.text) {
-            Color::Green
-        } else if is_string(&self.text) {
-            Color::DarkGreen
-        } else if is_comment(self.text.as_bytes()) {
-            rgb_color(100, 100, 100)
-        } else if self.is_fn {
-            rgb_color(140, 201, 26)
-        } else if self.is_macro {
-            Color::DarkGreen
-        } else {
-            rgb_color(76, 111, 217)
-        }
+//        if is_keyword(&self.text) {
+//            Color::Yellow
+//        } else if is_type(&self.text) {
+//            Color::Green
+//        } else if is_string(&self.text) {
+//            Color::DarkGreen
+//        } else if is_comment(self.text.as_bytes()) {
+//            rgb_color(100, 100, 100)
+//        } else if self.is_fn {
+//            rgb_color(140, 201, 26)
+//        } else if self.is_macro {
+//            Color::DarkGreen
+//        } else {
+//            rgb_color(76, 111, 217)
+//        }
+        self.color
     }
 
     fn attr(&self) -> Attribute {
-        if is_keyword(&self.text) || self.is_fn {
-            Attribute::Bold
-        } else {
-            Attribute::Reset
-        }
+//        if is_keyword(&self.text) || self.is_fn {
+//            Attribute::Bold
+//        } else {
+//            Attribute::Reset
+//        }
+        self.attr
     }
 }
