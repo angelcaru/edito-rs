@@ -673,7 +673,7 @@ impl Editor {
             }) => {
                 self.unsaved_changes = true;
 
-                if ch == '}' {
+                if self.language.should_dedent(ch) {
                     let curr_indent = Self::get_indent(self.row());
                     if curr_indent >= 4 {
                         let target_indent = curr_indent - 4;
@@ -722,7 +722,7 @@ impl Editor {
                     self.cursor.pos.1 += 1;
                     self.cursor.pos.0 = 0;
 
-                    let target_indent = if self.buf[self.cursor.pos.1 - 1].ends_with(b"{") {
+                    let target_indent = if self.language.should_indent(&self.buf[self.cursor.pos.1 - 1]) {
                         indent + 4
                     } else {
                         indent

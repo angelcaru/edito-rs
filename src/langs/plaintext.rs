@@ -11,4 +11,12 @@ impl Language for Plaintext {
             attr: Attribute::Reset,
         }]
     }
+
+    fn should_indent(&self, _line: &[u8]) -> bool {
+        false
+    }
+
+    fn should_dedent(&self, _ch: char) -> bool {
+        false
+    }
 }

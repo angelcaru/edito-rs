@@ -179,4 +179,12 @@ impl Language for Rust {
 
         words
     }
+
+    fn should_indent(&self, line: &[u8]) -> bool {
+        line.ends_with(b"{")
+    }
+    
+    fn should_dedent(&self, ch: char) -> bool {
+        ch == '}'
+    }
 }

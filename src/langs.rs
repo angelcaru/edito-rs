@@ -10,11 +10,21 @@ pub struct Word {
 
 pub trait Language {
     fn split_words(&self, code: &[u8]) -> Vec<Word>;
+    fn should_indent(&self, line: &[u8]) -> bool;
+    fn should_dedent(&self, ch: char) -> bool;
 }
 
 impl<T: Language + ?Sized> Language for &T {
     fn split_words(&self, code: &[u8]) -> Vec<Word> {
         (**self).split_words(code)
+    }
+
+    fn should_indent(&self, line: &[u8]) -> bool {
+        (**self).should_indent(line)
+    }
+
+    fn should_dedent(&self, ch: char) -> bool {
+        (**self).should_dedent(ch)
     }
 }
 

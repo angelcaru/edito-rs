@@ -127,4 +127,12 @@ impl Language for Python {
 
         words
     }
+
+    fn should_indent(&self, code: &[u8]) -> bool {
+        code.ends_with(b":") || code.ends_with(b"(") || code.ends_with(b"{") || code.ends_with(b"[")
+    }
+
+    fn should_dedent(&self, _ch: char) -> bool {
+        false
+    }
 }
