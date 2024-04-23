@@ -12,5 +12,29 @@ pub trait Language {
     fn split_words(&self, code: &[u8]) -> Vec<Word>;
 }
 
+impl<T: Language + ?Sized> Language for &T {
+    fn split_words(&self, code: &[u8]) -> Vec<Word> {
+        (**self).split_words(code)
+    }
+}
+
+pub const fn rgb_color(r: u8, g: u8, b: u8) -> Color {
+    Color::Rgb { r, g, b }
+}
+
 mod rust;
-pub use rust::*;
+mod plaintext;
+
+const LANGS: &[(&str, &dyn Language)] = &[
+    ("rust", &rust::Rust),
+    ("plaintext", &plaintext::Plaintext),
+];
+pub const DEFAULT_LANG: &str = "plaintext";
+
+pub fn lang_from_name(name: &str) -> Option<&'static dyn Language> {
+    LANGS
+        .iter()
+        .find(|(lang_name, _)| *lang_name == name)
+        .map(|(_, lang)| *lang)
+}
+

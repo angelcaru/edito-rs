@@ -1,4 +1,4 @@
-use crate::{Language, Word};
+use crate::*;
 use crossterm::style::{Attribute, Color};
 
 fn is_quote(ch: u8) -> bool {
@@ -77,10 +77,6 @@ fn is_type(word: &str) -> bool {
         | "usize" | "f32" | "f64" | "char" | "bool" | "str" => true,
         w => w.chars().next().filter(char::is_ascii_uppercase).is_some() && !w.contains('_'),
     }
-}
-
-pub const fn rgb_color(r: u8, g: u8, b: u8) -> Color {
-    Color::Rgb { r, g, b }
 }
 
 pub struct Rust;
