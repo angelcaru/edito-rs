@@ -183,6 +183,16 @@ impl Editor {
         self.set_status(format!("Successfully loaded file {}", file_path));
         self.unsaved_changes = false;
 
+        if let Some(ext) = file_path.split('.').last() {
+            self.log(format!("Detected extension {ext}"));
+            let default_lang = lang_from_name(DEFAULT_LANG).expect("default language should exist");
+            let lang = lang_from_extension(ext).unwrap_or_else(|| {
+                self.log(format!("Unknown extension {ext}"));
+                default_lang
+            });
+            self.language = Box::new(lang);
+        }
+
         Ok(())
     }
 
