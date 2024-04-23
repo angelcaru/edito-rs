@@ -24,9 +24,11 @@ pub const fn rgb_color(r: u8, g: u8, b: u8) -> Color {
 
 mod plaintext;
 mod rust;
+mod python;
 
 const LANGS: &[(&str, &str, &dyn Language)] = &[
     ("rust", "rs", &rust::Rust),
+    ("python", "py", &python::Python),
     ("plaintext", "txt", &plaintext::Plaintext),
 ];
 pub const DEFAULT_LANG: &str = "plaintext";
