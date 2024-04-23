@@ -1137,7 +1137,8 @@ fn main() -> Result<(), std::io::Error> {
     editor.enable_logging(6969)?;
 
     terminal::enable_raw_mode()?;
-    editor.display.queue_clear()?;
+    editor.display.stdout.queue(terminal::Clear(terminal::ClearType::All))?;
+    editor.display.stdout.queue(cursor::MoveTo(0, 0))?;
     #[cfg(unix)]
     editor.display.stdout.queue(PushKeyboardEnhancementFlags(
         KeyboardEnhancementFlags::REPORT_EVENT_TYPES,
