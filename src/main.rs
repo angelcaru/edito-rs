@@ -183,11 +183,9 @@ impl Editor {
         self.set_status(format!("Successfully loaded file {}", file_path));
         self.unsaved_changes = false;
 
-        if let Some(ext) = file_path.split('.').last() {
-            let default_lang = lang_from_name(DEFAULT_LANG).expect("default language should exist");
-            let lang = lang_from_extension(ext).unwrap_or(default_lang);
-            self.language = Box::new(lang);
-        }
+        let default_lang = lang_from_name(DEFAULT_LANG).expect("default language should exist");
+        let lang = lang_from_filename(file_path.as_str()).unwrap_or(default_lang);
+        self.language = Box::new(lang);
 
         Ok(())
     }

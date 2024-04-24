@@ -32,14 +32,28 @@ pub const fn rgb_color(r: u8, g: u8, b: u8) -> Color {
     Color::Rgb { r, g, b }
 }
 
+macro_rules! extension {
+    ($ext:literal) => {
+        |name| name.split('.').last().filter(|ext| *ext == $ext).is_some()
+    };
+}
+
+macro_rules! exact {
+    ($name:literal) => {
+        |name| name == $name
+    };
+}
+
 mod plaintext;
 mod rust;
 mod python;
+mod commit;
 
-const LANGS: &[(&str, &str, &dyn Language)] = &[
-    ("rust", "rs", &rust::Rust),
-    ("python", "py", &python::Python),
-    ("plaintext", "txt", &plaintext::Plaintext),
+const LANGS: &[(&str, fn(&str) -> bool, &dyn Language)] = &[
+    ("rust", extension!("rs"), &rust::Rust),
+    ("python", extension!("py"), &python::Python),
+    ("git-commit", exact!("COMMIT_EDITMSG"), &commit::Commit),
+    ("plaintext", |_| true, &plaintext::Plaintext),
 ];
 pub const DEFAULT_LANG: &str = "plaintext";
 
@@ -50,9 +64,9 @@ pub fn lang_from_name(name: &str) -> Option<&'static dyn Language> {
         .map(|(_, _, lang)| *lang)
 }
 
-pub fn lang_from_extension(ext: &str) -> Option<&'static dyn Language> {
+pub fn lang_from_filename(name: &str) -> Option<&'static dyn Language> {
     LANGS
         .iter()
-        .find(|(_, ext_name, _)| *ext_name == ext)
+        .find(|(_, validator, _)| validator(name))
         .map(|(_, _, lang)| *lang)
 }
