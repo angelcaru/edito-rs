@@ -40,7 +40,8 @@ macro_rules! extension {
 
 macro_rules! exact {
     ($name:literal) => {
-        |name| name == $name
+        // TODO: windows strikes again
+        |name| name.split('/').last().filter(|name| *name == $name).is_some()
     };
 }
 
