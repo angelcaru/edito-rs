@@ -101,10 +101,7 @@ impl Language for Python {
                     pos += 1;
                     code = &code[1..];
                 }
-                if code.first().filter(|ch| ch == &&b'!').is_some() {
-                    color = Color::DarkGreen;
-                    attr = Attribute::Reset;
-                } else if code.first().filter(|ch| ch == &&b'(').is_some() {
+                if code.first().filter(|ch| ch == &&b'(').is_some() {
                     color = rgb_color(140, 201, 26);
                     attr = Attribute::Bold;
                 } else if is_keyword(&word) {
