@@ -13,6 +13,15 @@ fn is_ident(ch: u8) -> bool {
     ch.is_ascii_alphanumeric() || ch == b'_'
 }
 
+fn is_number(word: &str) -> bool {
+    for ch in word.chars() {
+        if !ch.is_ascii_digit() {
+            return false;
+        }
+    }
+    true
+}
+
 fn is_keyword(word: &str) -> bool {
     matches!(
         word,
@@ -110,6 +119,9 @@ impl Language for Python {
                 } else if is_type(&word) {
                     color = Color::Green;
                     attr = Attribute::Reset;
+                } else if is_number(&word) {
+                    color = rgb_color(201, 146, 18);
+                    attr = Attribute::Reset;
                 } else {
                     color = rgb_color(76, 111, 217);
                     attr = Attribute::Reset;
@@ -134,3 +146,4 @@ impl Language for Python {
         false
     }
 }
+
