@@ -1,4 +1,5 @@
 mod langs;
+mod plugin;
 
 use crossterm::{
     cursor::{self, MoveTo},
@@ -17,10 +18,12 @@ use std::{
     sync::mpsc::{self, Sender},
     thread,
     time::Duration,
+    ffi::CString,
 };
 
 use crossterm_display::*;
 use langs::*;
+use plugin::*;
 
 pub trait WriteChar {
     fn write_ch(&mut self, ch: u8) -> Result<usize, std::io::Error>;
@@ -89,6 +92,7 @@ struct Editor {
     unsaved_changes: bool,
     clipboard: Option<Vec<Vec<u8>>>,
     language: Box<dyn Language>,
+    plugins: Vec<Plugin>,
 }
 
 const UI_WIDTH: u16 = 4;
@@ -121,7 +125,20 @@ impl Editor {
             unsaved_changes: true,
             clipboard: None,
             language: Box::new(language),
+            plugins: Vec::new(),
         })
+    }
+
+    fn load_plugin(&mut self, name: String) -> Result<(), CString> {
+        let mut plugin = Plugin::load(name.clone())?;
+        unsafe {
+            let mut api = Api::new(self, &mut plugin);
+            (plugin.init)(&mut api as *mut _);
+
+            self.log(format!("Loaded plugin: {name}"));
+        }
+        self.plugins.push(plugin);
+        Ok(())
     }
 
     fn get_indent(mut row: &[u8]) -> usize {
@@ -315,7 +332,27 @@ impl Editor {
 
                 None
             }
-            x => Some(format!("ERROR: unknown command: {x:?}"))
+            x => {
+                let mut result: Option<String> = None;
+                unsafe {
+                    for i in 0..self.plugins.len() {
+                        // hmm yes very safe
+                        let plugin_ptr = &mut self.plugins[i] as *mut _;
+                        let api_ptr = &mut Api::new(self, plugin_ptr) as *mut _;
+                        let plugin_cmd = (*plugin_ptr).cmds.iter().find(|(name, _, _)| name == x);
+                        if let Some((_, callback, data)) = plugin_cmd {
+                            let cmd_vec = cmd[1..]
+                                .into_iter()
+                                .map(|&s| s.into())
+                                .collect::<Vec<_>>();
+
+                            result = Some(callback(api_ptr, cmd_vec.as_ptr(), cmd_vec.len(), *data).into());
+                            break;
+                        }
+                    }
+                }
+                Some(result.unwrap_or_else(|| format!("ERROR: unknown command: {x:?}")))
+            }
         }.unwrap_or_else(|| std::str::from_utf8(&self.status)
         .expect("that we didn't put garbage into the status")
         .into())
@@ -325,6 +362,14 @@ impl Editor {
         let response = self.status.clone();
         let response = std::str::from_utf8(&response).unwrap();
         self.status.clear();
+        
+        self.cursor.state = CursorState::Default;
+        self.status_prompt = String::new();
+
+        if self.cursor.pos.0 > self.row().len() {
+            self.cursor.pos.0 = self.row().len();
+        }
+
         match self
             .prompt_type
             .expect("we never call this when the prompt is empty")
@@ -352,12 +397,6 @@ impl Editor {
             }
         }
 
-        self.cursor.state = CursorState::Default;
-        self.status_prompt = String::new();
-
-        if self.cursor.pos.0 > self.row().len() {
-            self.cursor.pos.0 = self.row().len();
-        }
 
         Ok(false)
     }
@@ -1121,18 +1160,26 @@ fn quit() -> ! {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    let mut args = std::env::args();
+    let mut args = std::env::args().peekable();
     let _ = args.next();
 
     let polling_rate = Duration::from_secs_f64(0.01);
     let mut editor =
         Editor::new(lang_from_name(DEFAULT_LANG).expect("default language should exist"))?;
 
+    editor.enable_logging(6969)?;
+
+    while args.next_if_eq("--plugin").is_some() {
+        let plugin = args.next().expect("plugin name should be provided");
+        if let Err(err) = editor.load_plugin(plugin.clone()) {
+            eprintln!("Failed to load plugin {}: {}", plugin, err.into_string().unwrap());
+            std::process::exit(1);
+        }
+    }
+
     if let Some(file_path) = args.next() {
         editor.load_file(file_path)?;
     }
-
-    editor.enable_logging(6969)?;
 
     terminal::enable_raw_mode()?;
     editor.display.stdout.queue(terminal::Clear(terminal::ClearType::All))?;
