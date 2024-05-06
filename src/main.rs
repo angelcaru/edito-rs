@@ -916,6 +916,16 @@ impl Editor {
     fn render(&mut self) -> Result<(), std::io::Error> {
         use crossterm::cursor::SetCursorStyle;
 
+        unsafe {
+            for i in 0..self.plugins.len() {
+                let plugin_ptr = &mut self.plugins[i] as *mut _;    
+                let api_ptr = &mut Api::new(self, plugin_ptr) as *mut _;
+                if let Some((callback, data)) = (*plugin_ptr).on_render {
+                    callback(api_ptr, data);
+                }
+            }
+        }
+
         // TODO: this should really be in crossterm-display
         for x in 0..self.display.w as usize {
             for y in 0..self.display.h as usize {

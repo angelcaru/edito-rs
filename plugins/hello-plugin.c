@@ -23,7 +23,18 @@ Ers_String_View command(Ers_Api *api, Ers_String_View *args, size_t args_len, vo
     return ERS_SV_EMPTY;
 }
 
+void render(Ers_Api *api, void *user_data) {
+    (void) user_data;
+    static int i = 0;
+
+    if (i % 100 == 0 && !api->is_cursor_in_status) {
+        api->set_status(api->editor, ERS_SV("testing..."));
+    }
+    i++;
+}
+
 void ers_plugin_init(Ers_Api *api) {
     api->add_cmd(api->plugin, ERS_SV("hello"), command, NULL);
+    api->on_render(api->plugin, render, NULL);
 }
 

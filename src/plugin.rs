@@ -2,6 +2,8 @@ use libc;
 
 use std::ffi::CString;
 
+use crate::CursorState;
+
 #[repr(C)]
 pub struct StringView<'a> {
     data: *const u8,
@@ -51,10 +53,12 @@ pub type CmdCallback = extern "C" fn(*mut Api, *const StringView, usize, *mut li
 pub struct Api {
     editor: *mut crate::Editor,
     plugin: *mut Plugin,
+    is_cursor_in_status: bool,
     set_status: unsafe extern "C" fn(*mut crate::Editor, StringView),
     add_cmd: unsafe extern "C" fn(*mut Plugin, StringView, CmdCallback, *mut libc::c_void),
     get_curr_row: unsafe extern "C" fn(*mut crate::Editor) -> StringView<'static>,
     update_curr_row: unsafe extern "C" fn(*mut crate::Editor, StringView),
+    on_render: unsafe extern "C" fn(*mut Plugin, fn(*mut Api, *mut libc::c_void), *mut libc::c_void),
 }
 
 impl Api {
@@ -75,13 +79,18 @@ impl Api {
             row.clear();
             row.extend_from_slice(new_row);
         }
+        unsafe extern "C" fn on_render(plugin: *mut Plugin, callback: fn(*mut Api, *mut libc::c_void), data: *mut libc::c_void) {
+            (*plugin).on_render = Some((callback, data));
+        }
         Self {
             editor: editor as *mut _ as _,
             plugin,
+            is_cursor_in_status: !matches!((*editor).cursor.state, CursorState::Default),
             set_status,
             add_cmd,
             get_curr_row,
             update_curr_row,
+            on_render,
         }
     }
 }
@@ -90,6 +99,7 @@ pub struct Plugin {
     handle: *mut libc::c_void,
     pub init: extern "C" fn(*mut Api),
     pub cmds: Vec<(String, CmdCallback, *mut libc::c_void)>,
+    pub on_render: Option<(fn(*mut Api, *mut libc::c_void), *mut libc::c_void)>,
 }
 
 impl Plugin {
@@ -110,7 +120,7 @@ impl Plugin {
             return Err(msg);
         }
 
-        Ok(Self { handle, init: unsafe  { std::mem::transmute(init) }, cmds: Vec::new() })
+        Ok(Self { handle, init: unsafe  { std::mem::transmute(init) }, cmds: Vec::new(), on_render: None })
     }
 
     pub fn add_cmd(&mut self, cmd: String, callback: CmdCallback, data: *mut libc::c_void) {
