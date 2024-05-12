@@ -77,15 +77,16 @@ impl Api {
         ) {
             (*plugin).add_cmd(cmd.into(), callback, data)
         }
-        unsafe extern "C" fn get_curr_row(editor: *mut crate::Editor) -> StringView<'static> {
-            (*editor).row().as_slice().into()
+        unsafe extern "C" fn get_curr_row(_editor: *mut crate::Editor) -> StringView<'static> {
+            todo!()
+            //(*editor).row().into_iter().map(|ch| *ch).collect::<String>().as_bytes().into()
         }
         unsafe extern "C" fn update_curr_row(editor: *mut crate::Editor, new_row: StringView) {
             let new_row: &[u8] = new_row.into();
             (*editor).log(format!("Updating current row: {:?}", new_row));
             let row = (*editor).row();
             row.clear();
-            row.extend_from_slice(new_row);
+            row.extend_from_slice(&std::str::from_utf8(new_row).unwrap().chars().collect::<Vec<char>>());
         }
         unsafe extern "C" fn on_render(
             plugin: *mut Plugin,

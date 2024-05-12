@@ -1,16 +1,16 @@
 use crate::*;
 use crossterm::style::{Attribute, Color};
 
-fn is_quote(ch: u8) -> bool {
-    ch == b'"' || ch == b'\''
+fn is_quote(ch: char) -> bool {
+    ch == '"' || ch == '\''
 }
 
-fn is_comment(code: &[u8]) -> bool {
-    !code.is_empty() && code[0] == b'#'
+fn is_comment(code: &[char]) -> bool {
+    !code.is_empty() && code[0] == '#'
 }
 
-fn is_ident(ch: u8) -> bool {
-    ch.is_ascii_alphanumeric() || ch == b'_'
+fn is_ident(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
 }
 
 fn is_number(word: &str) -> bool {
@@ -75,8 +75,8 @@ fn is_type(word: &str) -> bool {
 pub struct Python;
 
 impl Language for Python {
-    fn split_words(&self, mut code: &[u8]) -> Vec<Word> {
-        fn is_ch_usable(ch: u8) -> bool {
+    fn split_words(&self, mut code: &[char]) -> Vec<Word> {
+        fn is_ch_usable(ch: char) -> bool {
             is_ident(ch) || is_quote(ch)
         }
 
@@ -87,12 +87,12 @@ impl Language for Python {
             while !code.is_empty() && !is_ch_usable(code[0]) {
                 if is_comment(code) {
                     let mut word = String::new();
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                     // NOTE: the '\n' case will never show up because we only call this function
                     // on individual lines. It's here just in case that changes.
-                    while !code.is_empty() && code[0] != b'\n' {
+                    while !code.is_empty() && code[0] != '\n' {
                         word.push(code[0] as char);
                         pos += 1;
                         code = &code[1..];
@@ -146,7 +146,7 @@ impl Language for Python {
                     pos += 1;
                     code = &code[1..];
                 }
-                if code.first().filter(|ch| ch == &&b'(').is_some() {
+                if code.first().filter(|ch| ch == &&'(').is_some() {
                     color = rgb_color(140, 201, 26);
                     attr = Attribute::Bold;
                 } else if is_keyword(&word) {
@@ -174,8 +174,8 @@ impl Language for Python {
         words
     }
 
-    fn should_indent(&self, code: &[u8]) -> bool {
-        code.ends_with(b":") || code.ends_with(b"(") || code.ends_with(b"{") || code.ends_with(b"[")
+    fn should_indent(&self, code: &[char]) -> bool {
+        matches!(code.last(), Some(&':') | Some(&'(') | Some(&'{') | Some(&'['))
     }
 
     fn should_dedent(&self, _ch: char) -> bool {

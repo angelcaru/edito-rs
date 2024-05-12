@@ -1,16 +1,16 @@
 use crate::*;
 use crossterm::style::{Attribute, Color};
 
-fn is_quote(ch: u8) -> bool {
-    ch == b'"' || ch == b'\''
+fn is_quote(ch: char) -> bool {
+    ch == '"' || ch == '\''
 }
 
-fn is_comment(code: &[u8]) -> bool {
-    code.len() >= 2 && code[0] == b'/' && code[1] == b'/'
+fn is_comment(code: &[char]) -> bool {
+    code.len() >= 2 && code[0] == '/' && code[1] == '/'
 }
 
-fn is_ident(ch: u8) -> bool {
-    ch.is_ascii_alphanumeric() || ch == b'_'
+fn is_ident(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
 }
 
 fn is_number(word: &str) -> bool {
@@ -91,8 +91,8 @@ fn is_type(word: &str) -> bool {
 pub struct Rust;
 
 impl Language for Rust {
-    fn split_words(&self, mut code: &[u8]) -> Vec<Word> {
-        fn is_ch_usable(ch: u8) -> bool {
+    fn split_words(&self, mut code: &[char]) -> Vec<Word> {
+        fn is_ch_usable(ch: char) -> bool {
             is_ident(ch) || is_quote(ch)
         }
 
@@ -108,8 +108,8 @@ impl Language for Rust {
                     code = &code[1..];
                     // NOTE: the '\n' case will never show up because we only call this function
                     // on individual lines. It's here just in case that changes.
-                    while !code.is_empty() && code[0] != b'\n' {
-                        word.push(code[0] as char);
+                    while !code.is_empty() && code[0] != '\n' {
+                        word.push(code[0]);
                         pos += 1;
                         code = &code[1..];
                     }
@@ -162,10 +162,10 @@ impl Language for Rust {
                     pos += 1;
                     code = &code[1..];
                 }
-                if code.first().filter(|ch| ch == &&b'!').is_some() {
+                if code.first().filter(|ch| ch == &&'!').is_some() {
                     color = Color::DarkGreen;
                     attr = Attribute::Reset;
-                } else if code.first().filter(|ch| ch == &&b'(').is_some() {
+                } else if code.first().filter(|ch| ch == &&'(').is_some() {
                     color = rgb_color(140, 201, 26);
                     attr = Attribute::Bold;
                 } else if is_keyword(&word) {
@@ -193,8 +193,8 @@ impl Language for Rust {
         words
     }
 
-    fn should_indent(&self, line: &[u8]) -> bool {
-        line.ends_with(b"{")
+    fn should_indent(&self, line: &[char]) -> bool {
+        line.last() == Some(&'{')
     }
 
     fn should_dedent(&self, ch: char) -> bool {

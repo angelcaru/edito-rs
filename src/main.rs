@@ -26,13 +26,14 @@ use langs::*;
 use plugin::*;
 
 pub trait WriteChar {
-    fn write_ch(&mut self, ch: u8) -> Result<usize, std::io::Error>;
+    fn write_ch(&mut self, ch: char) -> Result<usize, std::io::Error>;
 }
 
 impl<T: Write> WriteChar for T {
-    fn write_ch(&mut self, ch: u8) -> Result<usize, std::io::Error> {
-        let buf = [ch];
-        self.write(&buf)
+    fn write_ch(&mut self, ch: char) -> Result<usize, std::io::Error> {
+        let mut buf = [0u8; 4];
+        let buf = ch.encode_utf8(&mut buf);
+        self.write(buf.as_bytes())
     }
 }
 
@@ -79,18 +80,18 @@ enum PromptType {
 
 struct Editor {
     display: TerminalDisplay,
-    buf: Vec<Vec<u8>>,
+    buf: Vec<Vec<char>>,
     cursor: Cursor,
     file_path: Option<String>,
     camera_topleft: Pos,
     w: u16,
     h: u16,
-    status: Vec<u8>,
+    status: Vec<char>,
     status_prompt: String,
     prompt_type: Option<PromptType>,
     logger: Option<Sender<String>>,
     unsaved_changes: bool,
-    clipboard: Option<Vec<Vec<u8>>>,
+    clipboard: Option<Vec<Vec<char>>>,
     language: Box<dyn Language>,
     plugins: Vec<Plugin>,
 }
@@ -141,7 +142,7 @@ impl Editor {
         Ok(())
     }
 
-    fn get_indent(mut row: &[u8]) -> usize {
+    fn get_indent(mut row: &[char]) -> usize {
         let mut res = 0;
 
         while !row.is_empty() && row[0].is_ascii_whitespace() {
@@ -166,7 +167,7 @@ impl Editor {
 
     fn set_status(&mut self, status: String) {
         self.log(format!("[STATUS] {status}"));
-        self.status = status.into();
+        self.status = status.chars().collect();
     }
 
     // TODO: introduce a better interface for this stuff
@@ -187,13 +188,13 @@ impl Editor {
         for ch in f {
             let ch = ch?;
             if ch == b'\n' {
-                self.buf.push(row);
+                self.buf.push(String::from_utf8_lossy(&row).chars().collect());
                 row = Vec::new();
             } else {
                 row.push(ch);
             }
         }
-        self.buf.push(row);
+        self.buf.push(String::from_utf8_lossy(&row).chars().collect());
 
         self.file_path = Some(file_path.clone());
 
@@ -215,9 +216,9 @@ impl Editor {
         let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
 
         for row in &self.buf {
-            f.write_all(row)?;
+            f.write_all(row.into_iter().collect::<String>().as_bytes())?;
             // TODO: support different line endings
-            f.write_ch(b'\n')?;
+            f.write_ch('\n')?;
         }
 
         self.set_status(format!(
@@ -229,14 +230,14 @@ impl Editor {
         Ok(())
     }
 
-    fn row(&mut self) -> &mut Vec<u8> {
+    fn row(&mut self) -> &mut Vec<char> {
         match self.cursor.state {
             CursorState::Default => &mut self.buf[self.cursor.pos.1],
             CursorState::StatusBar | CursorState::Find => &mut self.status,
         }
     }
 
-    //    fn prev_row(&mut self) -> Option<&mut Vec<u8>> {
+    //    fn prev_row(&mut self) -> Option<&mut Vec<char>> {
     //        let cy = self.cursor.pos.1;
     //        match self.cursor.state {
     //            CursorState::Default if cy > 0 => Some(&mut self.buf[cy - 1]),
@@ -353,14 +354,12 @@ impl Editor {
                 }
                 Some(result.unwrap_or_else(|| format!("ERROR: unknown command: {x:?}")))
             }
-        }.unwrap_or_else(|| std::str::from_utf8(&self.status)
-        .expect("that we didn't put garbage into the status")
-        .into())
+        }.unwrap_or_else(|| self.status.iter().copied().collect::<String>())
     }
 
     fn handle_status_prompt(&mut self) -> Result<bool, std::io::Error> {
         let response = self.status.clone();
-        let response = std::str::from_utf8(&response).unwrap();
+        let response = response.into_iter().collect::<String>();
         self.status.clear();
 
         self.cursor.state = CursorState::Default;
@@ -379,7 +378,7 @@ impl Editor {
                 self.save_file()?;
             }
             PromptType::QuitOnNoSave => {
-                match response {
+                match response.as_str() {
                     "y" | "Y" => {
                         self.save_file()?;
                         quit();
@@ -392,7 +391,7 @@ impl Editor {
                 }
             }
             PromptType::Command => {
-                let new_status = self.process_command(response);
+                let new_status = self.process_command(&response);
                 self.set_status(new_status);
             }
         }
@@ -401,7 +400,7 @@ impl Editor {
     }
 
     fn handle_find(&mut self) -> Result<bool, std::io::Error> {
-        fn vec_find(needle: &[u8], haystack: &[u8]) -> Option<usize> {
+        fn vec_find(needle: &[char], haystack: &[char]) -> Option<usize> {
             let mut needle_idx = 0;
             let mut match_start = 0;
             for (i, ch) in haystack.iter().enumerate() {
@@ -441,7 +440,7 @@ impl Editor {
         if !found {
             self.set_status(format!(
                 "Pattern not found: {query:?}",
-                query = std::str::from_utf8(&query).unwrap()
+                query = query.into_iter().collect::<String>()
             ));
         }
 
@@ -459,13 +458,13 @@ impl Editor {
         }
     }
 
-    fn add_char(&mut self, ch: u8) {
+    fn add_char(&mut self, ch: char) {
         assert!(self.cursor.pos.1 < self.buf.len());
 
         if let Some(sel) = self.cursor.selection_start {
             let ((sx, sy), (cx, cy)) = Cursor::minmax_pos(sel, self.cursor.pos);
             if self.row().is_empty() {
-                self.row().push(b' ');
+                self.row().push(' ');
             }
             let cx = std::cmp::min(cx, self.row().len() - 1);
 
@@ -473,7 +472,7 @@ impl Editor {
                 let post = Vec::from(&self.buf[cy][cx..]);
                 let pre = &mut self.buf[sy];
 
-                pre.resize(sx, b' ');
+                pre.resize(sx, ' ');
                 pre.push(ch);
                 pre.extend(post);
 
@@ -505,11 +504,11 @@ impl Editor {
         self.cursor.pos.0 += 1;
     }
 
-    fn backspace(&mut self) -> Option<u8> {
+    fn backspace(&mut self) -> Option<char> {
         if self.cursor.pos.0 != 0 {
             let mut x = self.cursor.pos.0;
             let row = self.row();
-            if row[..x].ends_with(b"    ") {
+            if row[..x].ends_with(&"    ".chars().collect::<Vec<char>>()) {
                 row.remove(x - 1);
                 row.remove(x - 2);
                 row.remove(x - 3);
@@ -530,7 +529,7 @@ impl Editor {
             self.buf.remove(self.cursor.pos.1);
 
             self.cursor.pos.1 -= 1;
-            Some(b'\n')
+            Some('\n')
         } else {
             None
         }
@@ -585,7 +584,7 @@ impl Editor {
         }
 
         if self.buf[cy].is_empty() {
-            self.buf[cy].push(b' ');
+            self.buf[cy].push(' ');
         }
         let cx = std::cmp::min(cx, self.buf[cy].len() - 1);
 
@@ -627,7 +626,7 @@ impl Editor {
 
         let (cx, cy) = self.cursor.pos;
         let post = Vec::from(&self.row()[cx..]);
-        self.row().resize(cx, b' ');
+        self.row().resize(cx, ' ');
 
         // borrow checker hates clippy
         #[allow(clippy::unnecessary_to_owned)]
@@ -719,7 +718,7 @@ impl Editor {
                     }
                 }
 
-                self.add_char(ch as u8);
+                self.add_char(ch);
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Enter,
@@ -767,7 +766,7 @@ impl Editor {
                         indent
                     };
                     while Self::get_indent(self.row()) < target_indent {
-                        self.add_char(b' ');
+                        self.add_char(' ');
                     }
                 }
                 self.move_cursor(0, 0);
@@ -779,7 +778,7 @@ impl Editor {
                 ..
             }) => {
                 for _ in 0..4 {
-                    self.add_char(b' ');
+                    self.add_char(' ');
                 }
             }
             Event::Key(KeyEvent {
@@ -792,7 +791,7 @@ impl Editor {
                 assert!(self.cursor.pos.1 < self.buf.len());
 
                 if self.cursor.selection_start.is_some() {
-                    self.add_char(0);
+                    self.add_char('\0');
                 }
                 if modifiers.contains(KeyModifiers::CONTROL) {
                     self.backspace_word();
@@ -816,7 +815,7 @@ impl Editor {
                 }
 
                 if self.cursor.selection_start.is_some() {
-                    self.add_char(0);
+                    self.add_char('\0');
                     self.backspace();
                 } else if self.cursor.selection_start.is_none()
                     || self.cursor.selection_start.unwrap().1 == self.cursor.pos.1
@@ -935,7 +934,7 @@ impl Editor {
                     x,
                     y,
                     Cell {
-                        ch: b' ',
+                        ch: ' ',
                         fg: Color::White,
                         bg: BLACK,
                         attr: Attribute::Reset,
@@ -993,7 +992,7 @@ impl Editor {
                     x,
                     y,
                     Cell {
-                        ch: num_str.as_bytes().get(x).copied().unwrap_or(b' '),
+                        ch: num_str.chars().nth(x).unwrap_or(' '),
                         fg: if num == self.cursor.pos.1 {
                             Color::White
                         } else {
@@ -1050,7 +1049,7 @@ impl Editor {
             for x in 0..self.w {
                 let x = (x + UI_WIDTH) as usize;
                 let ch_idx = x + cx - UI_WIDTH as usize;
-                let ch = *get2d(&self.buf, row_idx, ch_idx).unwrap_or(&b' ');
+                let ch = *get2d(&self.buf, row_idx, ch_idx).unwrap_or(&' ');
 
                 let mut bg = BLACK;
                 let mut fg = get_curr_word(&mut words, ch_idx)
@@ -1080,7 +1079,7 @@ impl Editor {
             .unwrap_or("<temporary buffer>".into());
         for x in 0..self.display.w as usize {
             let cell = Cell {
-                ch: *file_path.as_bytes().get(x).unwrap_or(&b' '),
+                ch: file_path.chars().nth(x).unwrap_or(' '),
                 fg: BLACK,
                 bg: Color::White,
                 attr: Attribute::Reset,
@@ -1094,9 +1093,9 @@ impl Editor {
 
         let status_iter = self
             .status_prompt
-            .bytes()
+            .chars()
             .chain(self.status.iter().copied())
-            .chain(std::iter::repeat(b' '));
+            .chain(std::iter::repeat(' '));
         for (x, ch) in (0..self.display.w as usize).zip(status_iter) {
             let cell = Cell {
                 ch,
@@ -1155,7 +1154,7 @@ fn logger(port: u16) -> std::io::Result<Sender<String>> {
             let msg = reciever.recv().unwrap();
             let msg = msg.as_bytes();
             stream.write_all(msg).unwrap();
-            stream.write_ch(b'\n').unwrap();
+            stream.write_ch('\n').unwrap();
             stream.flush().unwrap();
         }
     });
