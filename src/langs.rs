@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use crossterm::style::{Attribute, Color};
 
 #[derive(Debug, Clone)]
@@ -41,14 +43,19 @@ macro_rules! extension {
 macro_rules! exact {
     ($name:literal) => {
         // TODO: windows strikes again
-        |name| name.split('/').last().filter(|name| *name == $name).is_some()
+        |name| {
+            name.split('/')
+                .last()
+                .filter(|name| *name == $name)
+                .is_some()
+        }
     };
 }
 
-mod plaintext;
-mod rust;
-mod python;
 mod commit;
+mod plaintext;
+mod python;
+mod rust;
 
 const LANGS: &[(&str, fn(&str) -> bool, &dyn Language)] = &[
     ("rust", extension!("rs"), &rust::Rust),

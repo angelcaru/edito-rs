@@ -10,6 +10,7 @@ use crossterm::{
 };
 use std::{
     cmp::Ordering,
+    ffi::CString,
     io::{Read, Write},
     net::{IpAddr, SocketAddr, TcpListener},
     num::NonZeroUsize,
@@ -18,7 +19,6 @@ use std::{
     sync::mpsc::{self, Sender},
     thread,
     time::Duration,
-    ffi::CString,
 };
 
 use crossterm_display::*;
@@ -342,7 +342,7 @@ impl Editor {
                         let plugin_cmd = (*plugin_ptr).cmds.iter().find(|(name, _, _)| name == x);
                         if let Some((_, callback, data)) = plugin_cmd {
                             let cmd_vec = cmd[1..]
-                                .into_iter()
+                                .iter()
                                 .map(|&s| s.into())
                                 .collect::<Vec<_>>();
 
@@ -362,7 +362,7 @@ impl Editor {
         let response = self.status.clone();
         let response = std::str::from_utf8(&response).unwrap();
         self.status.clear();
-        
+
         self.cursor.state = CursorState::Default;
         self.status_prompt = String::new();
 
@@ -396,7 +396,6 @@ impl Editor {
                 self.set_status(new_status);
             }
         }
-
 
         Ok(false)
     }
@@ -759,7 +758,10 @@ impl Editor {
                     self.cursor.pos.1 += 1;
                     self.cursor.pos.0 = 0;
 
-                    let target_indent = if self.language.should_indent(&self.buf[self.cursor.pos.1 - 1]) {
+                    let target_indent = if self
+                        .language
+                        .should_indent(&self.buf[self.cursor.pos.1 - 1])
+                    {
                         indent + 4
                     } else {
                         indent
@@ -918,7 +920,7 @@ impl Editor {
 
         unsafe {
             for i in 0..self.plugins.len() {
-                let plugin_ptr = &mut self.plugins[i] as *mut _;    
+                let plugin_ptr = &mut self.plugins[i] as *mut _;
                 let api_ptr = &mut Api::new(self, plugin_ptr) as *mut _;
                 if let Some((callback, data)) = (*plugin_ptr).on_render {
                     callback(api_ptr, data);
@@ -1182,7 +1184,11 @@ fn main() -> Result<(), std::io::Error> {
     while args.next_if_eq("--plugin").is_some() {
         let plugin = args.next().expect("plugin name should be provided");
         if let Err(err) = editor.load_plugin(plugin.clone()) {
-            eprintln!("Failed to load plugin {}: {}", plugin, err.into_string().unwrap());
+            eprintln!(
+                "Failed to load plugin {}: {}",
+                plugin,
+                err.into_string().unwrap()
+            );
             std::process::exit(1);
         }
     }
@@ -1192,7 +1198,10 @@ fn main() -> Result<(), std::io::Error> {
     }
 
     terminal::enable_raw_mode()?;
-    editor.display.stdout.queue(terminal::Clear(terminal::ClearType::All))?;
+    editor
+        .display
+        .stdout
+        .queue(terminal::Clear(terminal::ClearType::All))?;
     editor.display.stdout.queue(cursor::MoveTo(0, 0))?;
     #[cfg(unix)]
     editor.display.stdout.queue(PushKeyboardEnhancementFlags(

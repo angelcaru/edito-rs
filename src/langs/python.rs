@@ -25,13 +25,49 @@ fn is_number(word: &str) -> bool {
 fn is_keyword(word: &str) -> bool {
     matches!(
         word,
-        "False" | "None" | "True" | "and" | "as" | "assert" | "async" | "await" | "break" | "class" | "continue" | "def" | "del" | "elif" | "else" | "except" | "finally" | "for" | "from" | "global" | "if" | "import" | "in" | "is" | "lambda" | "nonlocal" | "not" | "or" | "pass" | "raise" | "return" | "try" | "while" | "with" | "yield"
+        "False"
+            | "None"
+            | "True"
+            | "and"
+            | "as"
+            | "assert"
+            | "async"
+            | "await"
+            | "break"
+            | "class"
+            | "continue"
+            | "def"
+            | "del"
+            | "elif"
+            | "else"
+            | "except"
+            | "finally"
+            | "for"
+            | "from"
+            | "global"
+            | "if"
+            | "import"
+            | "in"
+            | "is"
+            | "lambda"
+            | "nonlocal"
+            | "not"
+            | "or"
+            | "pass"
+            | "raise"
+            | "return"
+            | "try"
+            | "while"
+            | "with"
+            | "yield"
     )
 }
 
 fn is_type(word: &str) -> bool {
     match word {
-        "bool" | "bytearray" | "bytes" | "complex" | "dict" | "float" | "frozenset" | "int" | "list" | "memoryview" | "object" | "range" | "set" | "slice" | "str" | "super" | "tuple" | "type" => true,
+        "bool" | "bytearray" | "bytes" | "complex" | "dict" | "float" | "frozenset" | "int"
+        | "list" | "memoryview" | "object" | "range" | "set" | "slice" | "str" | "super"
+        | "tuple" | "type" => true,
         w => w.chars().next().filter(char::is_ascii_uppercase).is_some() && !w.contains('_'),
     }
 }
@@ -146,4 +182,3 @@ impl Language for Python {
         false
     }
 }
-
