@@ -7,14 +7,14 @@ impl Language for Commit {
         if code.first().filter(|&&ch| ch == '#').is_some() {
             return vec![Word {
                 col: 0,
-                text: code.into_iter().collect(),
+                text: code.iter().collect(),
                 color: rgb_color(100, 100, 100),
                 attr: Attribute::Italic,
             }];
         }
         vec![Word {
             col: 0,
-            text: code.into_iter().collect(),
+            text: code.iter().collect(),
             color: Color::White,
             attr: Attribute::Reset,
         }]

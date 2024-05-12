@@ -93,12 +93,12 @@ impl Language for Python {
                     // NOTE: the '\n' case will never show up because we only call this function
                     // on individual lines. It's here just in case that changes.
                     while !code.is_empty() && code[0] != '\n' {
-                        word.push(code[0] as char);
+                        word.push(code[0]);
                         pos += 1;
                         code = &code[1..];
                     }
                     if !code.is_empty() {
-                        word.push(code[0] as char);
+                        word.push(code[0]);
                         pos += 1;
                         code = &code[1..];
                     }
@@ -121,16 +121,16 @@ impl Language for Python {
 
             if !code.is_empty() && is_quote(code[0]) {
                 let quote = code[0];
-                word.push(quote as char);
+                word.push(quote);
                 pos += 1;
                 code = &code[1..];
                 while !code.is_empty() && code[0] != quote {
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                 }
                 if !code.is_empty() {
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                 }
@@ -142,7 +142,7 @@ impl Language for Python {
                     code = &code[1..];
                 }
                 while !code.is_empty() && is_ident(code[0]) {
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                 }
@@ -175,7 +175,10 @@ impl Language for Python {
     }
 
     fn should_indent(&self, code: &[char]) -> bool {
-        matches!(code.last(), Some(&':') | Some(&'(') | Some(&'{') | Some(&'['))
+        matches!(
+            code.last(),
+            Some(&':') | Some(&'(') | Some(&'{') | Some(&'[')
+        )
     }
 
     fn should_dedent(&self, _ch: char) -> bool {

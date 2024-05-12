@@ -103,7 +103,7 @@ impl Language for Rust {
             while !code.is_empty() && !is_ch_usable(code[0]) {
                 if is_comment(code) {
                     let mut word = String::new();
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                     // NOTE: the '\n' case will never show up because we only call this function
@@ -114,7 +114,7 @@ impl Language for Rust {
                         code = &code[1..];
                     }
                     if !code.is_empty() {
-                        word.push(code[0] as char);
+                        word.push(code[0]);
                         pos += 1;
                         code = &code[1..];
                     }
@@ -137,16 +137,16 @@ impl Language for Rust {
 
             if !code.is_empty() && is_quote(code[0]) {
                 let quote = code[0];
-                word.push(code[0] as char);
+                word.push(code[0]);
                 pos += 1;
                 code = &code[1..];
                 while !code.is_empty() && code[0] != quote {
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                 }
                 if !code.is_empty() {
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                 }
@@ -158,7 +158,7 @@ impl Language for Rust {
                     code = &code[1..];
                 }
                 while !code.is_empty() && is_ident(code[0]) {
-                    word.push(code[0] as char);
+                    word.push(code[0]);
                     pos += 1;
                     code = &code[1..];
                 }

@@ -188,13 +188,15 @@ impl Editor {
         for ch in f {
             let ch = ch?;
             if ch == b'\n' {
-                self.buf.push(String::from_utf8_lossy(&row).chars().collect());
+                self.buf
+                    .push(String::from_utf8_lossy(&row).chars().collect());
                 row = Vec::new();
             } else {
                 row.push(ch);
             }
         }
-        self.buf.push(String::from_utf8_lossy(&row).chars().collect());
+        self.buf
+            .push(String::from_utf8_lossy(&row).chars().collect());
 
         self.file_path = Some(file_path.clone());
 
@@ -216,7 +218,7 @@ impl Editor {
         let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
 
         for row in &self.buf {
-            f.write_all(row.into_iter().collect::<String>().as_bytes())?;
+            f.write_all(row.iter().collect::<String>().as_bytes())?;
             // TODO: support different line endings
             f.write_ch('\n')?;
         }
@@ -374,7 +376,7 @@ impl Editor {
             .expect("we never call this when the prompt is empty")
         {
             PromptType::FileSave => {
-                self.file_path = Some(response.into());
+                self.file_path = Some(response);
                 self.save_file()?;
             }
             PromptType::QuitOnNoSave => {
@@ -556,7 +558,7 @@ impl Editor {
 
     fn backspace_word(&mut self) {
         loop {
-            let ch = self.backspace().map(|ch| ch as char);
+            let ch = self.backspace();
             self.log(format!("{:?}", ch));
             let cx = self.cursor.pos.0;
             if cx == 0

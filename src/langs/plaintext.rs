@@ -6,7 +6,7 @@ impl Language for Plaintext {
     fn split_words(&self, code: &[char]) -> Vec<Word> {
         vec![Word {
             col: 0,
-            text: code.into_iter().collect::<String>(),
+            text: code.iter().collect::<String>(),
             color: Color::White,
             attr: Attribute::Reset,
         }]
