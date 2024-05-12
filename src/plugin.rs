@@ -58,7 +58,7 @@ pub struct Api {
     add_cmd: unsafe extern "C" fn(*mut Plugin, StringView, CmdCallback, *mut libc::c_void),
     get_curr_row: unsafe extern "C" fn(*mut crate::Editor) -> StringView<'static>,
     update_curr_row: unsafe extern "C" fn(*mut crate::Editor, StringView),
-    on_render: unsafe extern "C" fn(*mut Plugin, fn(*mut Api, *mut libc::c_void), *mut libc::c_void),
+    on_render: unsafe extern "C" fn(*mut Plugin, extern "C" fn(*mut Api, *mut libc::c_void), *mut libc::c_void),
 }
 
 impl Api {
@@ -79,7 +79,7 @@ impl Api {
             row.clear();
             row.extend_from_slice(new_row);
         }
-        unsafe extern "C" fn on_render(plugin: *mut Plugin, callback: fn(*mut Api, *mut libc::c_void), data: *mut libc::c_void) {
+        unsafe extern "C" fn on_render(plugin: *mut Plugin, callback: extern "C" fn(*mut Api, *mut libc::c_void), data: *mut libc::c_void) {
             (*plugin).on_render = Some((callback, data));
         }
         Self {
@@ -99,7 +99,7 @@ pub struct Plugin {
     handle: *mut libc::c_void,
     pub init: extern "C" fn(*mut Api),
     pub cmds: Vec<(String, CmdCallback, *mut libc::c_void)>,
-    pub on_render: Option<(fn(*mut Api, *mut libc::c_void), *mut libc::c_void)>,
+    pub on_render: Option<(extern "C" fn(*mut Api, *mut libc::c_void), *mut libc::c_void)>,
 }
 
 impl Plugin {
