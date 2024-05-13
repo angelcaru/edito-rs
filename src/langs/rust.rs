@@ -5,8 +5,8 @@ fn is_quote(ch: char) -> bool {
     ch == '"' || ch == '\''
 }
 
-fn is_comment(code: &[char]) -> bool {
-    code.len() >= 2 && code[0] == '/' && code[1] == '/'
+fn is_comment(code: &str) -> bool {
+    code.len() >= 2 && code.chars().next().unwrap() == '/' && code.chars().nth(1).unwrap() == '/'
 }
 
 fn is_ident(ch: char) -> bool {
@@ -91,7 +91,7 @@ fn is_type(word: &str) -> bool {
 pub struct Rust;
 
 impl Language for Rust {
-    fn split_words(&self, mut code: &[char]) -> Vec<Word> {
+    fn split_words(&self, mut code: &str) -> Vec<Word> {
         fn is_ch_usable(ch: char) -> bool {
             is_ident(ch) || is_quote(ch)
         }
@@ -100,21 +100,21 @@ impl Language for Rust {
 
         let mut pos = 0;
         while !code.is_empty() {
-            while !code.is_empty() && !is_ch_usable(code[0]) {
+            while !code.is_empty() && !is_ch_usable(code.chars().next().unwrap()) {
                 if is_comment(code) {
                     let mut word = String::new();
-                    word.push(code[0]);
+                    word.push(code.chars().next().unwrap());
                     pos += 1;
                     code = &code[1..];
                     // NOTE: the '\n' case will never show up because we only call this function
                     // on individual lines. It's here just in case that changes.
-                    while !code.is_empty() && code[0] != '\n' {
-                        word.push(code[0]);
+                    while !code.is_empty() && code.chars().next().unwrap() != '\n' {
+                        word.push(code.chars().next().unwrap());
                         pos += 1;
                         code = &code[1..];
                     }
                     if !code.is_empty() {
-                        word.push(code[0]);
+                        word.push(code.chars().next().unwrap());
                         pos += 1;
                         code = &code[1..];
                     }
@@ -135,37 +135,37 @@ impl Language for Rust {
             let color;
             let attr;
 
-            if !code.is_empty() && is_quote(code[0]) {
-                let quote = code[0];
-                word.push(code[0]);
+            if !code.is_empty() && is_quote(code.chars().next().unwrap()) {
+                let quote = code.chars().next().unwrap();
+                word.push(code.chars().next().unwrap());
                 pos += 1;
                 code = &code[1..];
-                while !code.is_empty() && code[0] != quote {
-                    word.push(code[0]);
+                while !code.is_empty() && code.chars().next().unwrap() != quote {
+                    word.push(code.chars().next().unwrap());
                     pos += 1;
                     code = &code[1..];
                 }
                 if !code.is_empty() {
-                    word.push(code[0]);
+                    word.push(code.chars().next().unwrap());
                     pos += 1;
                     code = &code[1..];
                 }
                 color = Color::DarkGreen;
                 attr = Attribute::Reset;
             } else {
-                while !code.is_empty() && !is_ch_usable(code[0]) {
+                while !code.is_empty() && !is_ch_usable(code.chars().next().unwrap()) {
                     pos += 1;
                     code = &code[1..];
                 }
-                while !code.is_empty() && is_ident(code[0]) {
-                    word.push(code[0]);
+                while !code.is_empty() && is_ident(code.chars().next().unwrap()) {
+                    word.push(code.chars().next().unwrap());
                     pos += 1;
                     code = &code[1..];
                 }
-                if code.first().filter(|ch| ch == &&'!').is_some() {
+                if code.chars().next().filter(|&ch| ch == '!').is_some() {
                     color = Color::DarkGreen;
                     attr = Attribute::Reset;
-                } else if code.first().filter(|ch| ch == &&'(').is_some() {
+                } else if code.chars().next().filter(|&ch| ch == '(').is_some() {
                     color = rgb_color(140, 201, 26);
                     attr = Attribute::Bold;
                 } else if is_keyword(&word) {
@@ -193,8 +193,8 @@ impl Language for Rust {
         words
     }
 
-    fn should_indent(&self, line: &[char]) -> bool {
-        line.last() == Some(&'{')
+    fn should_indent(&self, line: &str) -> bool {
+        line.chars().last() == Some('{')
     }
 
     fn should_dedent(&self, ch: char) -> bool {

@@ -3,16 +3,16 @@ use crossterm::style::{Attribute, Color};
 
 pub struct Plaintext;
 impl Language for Plaintext {
-    fn split_words(&self, code: &[char]) -> Vec<Word> {
+    fn split_words(&self, code: &str) -> Vec<Word> {
         vec![Word {
             col: 0,
-            text: code.iter().collect::<String>(),
+            text: code.into(),
             color: Color::White,
             attr: Attribute::Reset,
         }]
     }
 
-    fn should_indent(&self, _line: &[char]) -> bool {
+    fn should_indent(&self, _line: &str) -> bool {
         false
     }
 
