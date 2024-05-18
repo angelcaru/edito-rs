@@ -86,7 +86,12 @@ impl Api {
             (*editor).log(format!("Updating current row: {:?}", new_row));
             let row = (*editor).row();
             row.clear();
-            row.push_str(std::str::from_utf8_unchecked(new_row));
+            row.extend_from_slice(
+                &std::str::from_utf8(new_row)
+                    .unwrap()
+                    .chars()
+                    .collect::<Vec<char>>(),
+            );
         }
         unsafe extern "C" fn on_render(
             plugin: *mut Plugin,

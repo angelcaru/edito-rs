@@ -3,24 +3,24 @@ use crate::*;
 pub struct Commit;
 
 impl Language for Commit {
-    fn split_words(&self, code: &str) -> Vec<Word> {
-        if code.chars().next().filter(|&ch| ch == '#').is_some() {
+    fn split_words(&self, code: &[char]) -> Vec<Word> {
+        if code.first().filter(|&&ch| ch == '#').is_some() {
             return vec![Word {
                 col: 0,
-                text: code.into(),
+                text: code.iter().collect(),
                 color: rgb_color(100, 100, 100),
                 attr: Attribute::Italic,
             }];
         }
         vec![Word {
             col: 0,
-            text: code.into(),
+            text: code.iter().collect(),
             color: Color::White,
             attr: Attribute::Reset,
         }]
     }
 
-    fn should_indent(&self, _line: &str) -> bool {
+    fn should_indent(&self, _line: &[char]) -> bool {
         false
     }
 

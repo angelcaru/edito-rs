@@ -80,18 +80,18 @@ enum PromptType {
 
 struct Editor {
     display: TerminalDisplay,
-    buf: Vec<String>,
+    buf: Vec<Vec<char>>,
     cursor: Cursor,
     file_path: Option<String>,
     camera_topleft: Pos,
     w: u16,
     h: u16,
-    status: String,
+    status: Vec<char>,
     status_prompt: String,
     prompt_type: Option<PromptType>,
     logger: Option<Sender<String>>,
     unsaved_changes: bool,
-    clipboard: Option<Vec<String>>,
+    clipboard: Option<Vec<Vec<char>>>,
     language: Box<dyn Language>,
     plugins: Vec<Plugin>,
 }
@@ -102,7 +102,7 @@ const UI_HEIGHT: u16 = 2;
 const BLACK: Color = rgb_color(0x18, 0x18, 0x18);
 impl Editor {
     fn new<Lang: Language + 'static>(language: Lang) -> Result<Self, std::io::Error> {
-        let buf = vec![String::new()];
+        let buf = vec![Vec::new()];
 
         let display = TerminalDisplay::new()?;
 
@@ -119,7 +119,7 @@ impl Editor {
             camera_topleft: (0, 0),
             w,
             h,
-            status: String::new(),
+            status: Vec::new(),
             status_prompt: String::new(),
             logger: None,
             prompt_type: None,
@@ -142,10 +142,10 @@ impl Editor {
         Ok(())
     }
 
-    fn get_indent(mut row: &str) -> usize {
+    fn get_indent(mut row: &[char]) -> usize {
         let mut res = 0;
 
-        while !row.is_empty() && row.chars().next().unwrap().is_whitespace() {
+        while !row.is_empty() && row[0].is_ascii_whitespace() {
             res += 1;
             row = &row[1..];
         }
@@ -218,7 +218,7 @@ impl Editor {
         let mut f = std::fs::File::create(self.file_path.clone().unwrap())?;
 
         for row in &self.buf {
-            f.write_all(row.as_bytes())?;
+            f.write_all(row.iter().collect::<String>().as_bytes())?;
             // TODO: support different line endings
             f.write_ch('\n')?;
         }
@@ -232,14 +232,14 @@ impl Editor {
         Ok(())
     }
 
-    fn row(&mut self) -> &mut String {
+    fn row(&mut self) -> &mut Vec<char> {
         match self.cursor.state {
             CursorState::Default => &mut self.buf[self.cursor.pos.1],
             CursorState::StatusBar | CursorState::Find => &mut self.status,
         }
     }
 
-    //    fn prev_row(&mut self) -> Option<&mut String> {
+    //    fn prev_row(&mut self) -> Option<&mut Vec<char>> {
     //        let cy = self.cursor.pos.1;
     //        match self.cursor.state {
     //            CursorState::Default if cy > 0 => Some(&mut self.buf[cy - 1]),
@@ -356,11 +356,12 @@ impl Editor {
                 }
                 Some(result.unwrap_or_else(|| format!("ERROR: unknown command: {x:?}")))
             }
-        }.unwrap_or_else(|| self.status.clone())
+        }.unwrap_or_else(|| self.status.iter().copied().collect::<String>())
     }
 
     fn handle_status_prompt(&mut self) -> Result<bool, std::io::Error> {
         let response = self.status.clone();
+        let response = response.into_iter().collect::<String>();
         self.status.clear();
 
         self.cursor.state = CursorState::Default;
@@ -401,6 +402,25 @@ impl Editor {
     }
 
     fn handle_find(&mut self) -> Result<bool, std::io::Error> {
+        fn vec_find(needle: &[char], haystack: &[char]) -> Option<usize> {
+            let mut needle_idx = 0;
+            let mut match_start = 0;
+            for (i, ch) in haystack.iter().enumerate() {
+                if *ch == needle[needle_idx] {
+                    if needle_idx == 0 {
+                        match_start = i;
+                    }
+                    needle_idx += 1;
+                    if needle_idx >= needle.len() {
+                        return Some(match_start);
+                    }
+                } else {
+                    needle_idx = 0;
+                }
+            }
+            None
+        }
+
         assert_eq!(self.cursor.state, CursorState::Find);
         let query = self.row();
         if query.is_empty() {
@@ -411,7 +431,7 @@ impl Editor {
 
         let mut found = false;
         for (line, row) in self.buf.iter().enumerate().skip(curr_line) {
-            if let Some(col) = query.find(row) {
+            if let Some(col) = vec_find(&query, row) {
                 self.cursor.pos = (col, line);
                 self.cursor.selection_start = Some((col + query.len() - 1, line));
                 self.update_camera();
@@ -420,7 +440,10 @@ impl Editor {
             }
         }
         if !found {
-            self.set_status(format!("Pattern not found: {query:?}"));
+            self.set_status(format!(
+                "Pattern not found: {query:?}",
+                query = query.into_iter().collect::<String>()
+            ));
         }
 
         self.cursor.state = CursorState::Default;
@@ -448,14 +471,12 @@ impl Editor {
             let cx = std::cmp::min(cx, self.row().len() - 1);
 
             if sy != cy {
-                let post = String::from(&self.buf[cy][cx..]);
+                let post = Vec::from(&self.buf[cy][cx..]);
                 let pre = &mut self.buf[sy];
 
-                while pre.len() > sx {
-                    pre.pop().unwrap();
-                }
+                pre.resize(sx, ' ');
                 pre.push(ch);
-                pre.extend(post.chars());
+                pre.extend(post);
 
                 for i in (sy + 1..=cy).rev() {
                     self.buf.remove(i);
@@ -489,7 +510,7 @@ impl Editor {
         if self.cursor.pos.0 != 0 {
             let mut x = self.cursor.pos.0;
             let row = self.row();
-            if row[..x].ends_with("    ") {
+            if row[..x].ends_with(&"    ".chars().collect::<Vec<char>>()) {
                 row.remove(x - 1);
                 row.remove(x - 2);
                 row.remove(x - 3);
@@ -506,7 +527,7 @@ impl Editor {
 
             self.cursor.pos.0 = pre.len();
 
-            pre.extend(post.chars());
+            pre.extend(post);
             self.buf.remove(self.cursor.pos.1);
 
             self.cursor.pos.1 -= 1;
@@ -526,9 +547,8 @@ impl Editor {
                 || cx == self.row().len()
                 || self
                     .row()
-                    .chars()
-                    .nth(cx)
-                    .filter(|ch| !ch.is_alphanumeric())
+                    .get(cx)
+                    .filter(|ch| !ch.is_ascii_alphanumeric())
                     .is_some()
             {
                 break;
@@ -544,8 +564,7 @@ impl Editor {
             if cx == 0
                 || self
                     .row()
-                    .chars()
-                    .nth(cx - 1)
+                    .get(cx - 1)
                     .filter(|ch| ch.is_ascii_alphanumeric())
                     .is_none()
             {
@@ -573,12 +592,12 @@ impl Editor {
 
         let clipboard = self.clipboard.as_mut().unwrap();
 
-        clipboard.push(String::new());
+        clipboard.push(Vec::new());
         if sy == cy {
-            clipboard[0].push_str(&self.buf[cy][sx..=cx]);
+            clipboard[0].extend_from_slice(&self.buf[cy][sx..=cx]);
         } else {
             // First line
-            clipboard[0].push_str(&self.buf[sy][sx..]);
+            clipboard[0].extend_from_slice(&self.buf[sy][sx..]);
 
             // The rest
             for i in (sy + 1)..cy {
@@ -586,11 +605,11 @@ impl Editor {
             }
 
             // Last line
-            clipboard.push(String::new());
+            clipboard.push(Vec::new());
             clipboard
                 .last_mut()
                 .unwrap()
-                .push_str(&self.buf[cy][..=cx]);
+                .extend_from_slice(&self.buf[cy][..=cx]);
         }
     }
 
@@ -608,13 +627,8 @@ impl Editor {
         self.cursor.selection_start = None;
 
         let (cx, cy) = self.cursor.pos;
-        let post = String::from(&self.row()[cx..]);
-        {
-            let row = self.row();
-            while row.len() > cx {
-                row.pop().unwrap();
-            }
-        }
+        let post = Vec::from(&self.row()[cx..]);
+        self.row().resize(cx, ' ');
 
         // borrow checker hates clippy
         #[allow(clippy::unnecessary_to_owned)]
@@ -622,7 +636,7 @@ impl Editor {
         let mut y = cy;
 
         let row = clipboard.next().expect("We never create empty clipboards");
-        self.row().push_str(&row);
+        self.row().extend_from_slice(&row);
 
         for row in clipboard {
             if let CursorState::Default = self.cursor.state {
@@ -631,7 +645,7 @@ impl Editor {
 
             self.buf.insert(y, row);
         }
-        self.buf[y].push_str(&post);
+        self.buf[y].extend_from_slice(&post);
 
         self.cursor.pos.1 = y;
         self.cursor.pos.0 = self.row().len();
@@ -639,7 +653,7 @@ impl Editor {
 
     fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
         if let CursorState::Default = self.cursor.state {
-            self.status = String::new();
+            self.status = Vec::new();
         }
         self.log(format!("Got event: {e:?}"));
         match e {
@@ -731,7 +745,7 @@ impl Editor {
                     let (x, y) = &mut self.cursor.pos;
 
                     let (pre, post) = self.buf[*y].split_at(*x);
-                    let (pre, post) = (String::from(pre), String::from(post));
+                    let (pre, post) = (Vec::from(pre), Vec::from(post));
                     self.buf[*y] = post;
                     self.buf.insert(*y, pre);
 
@@ -740,7 +754,7 @@ impl Editor {
                 } else {
                     let indent = Self::get_indent(self.row());
 
-                    self.buf.insert(self.cursor.pos.1 + 1, String::new());
+                    self.buf.insert(self.cursor.pos.1 + 1, Vec::new());
 
                     self.cursor.pos.1 += 1;
                     self.cursor.pos.0 = 0;
@@ -817,7 +831,7 @@ impl Editor {
                                 let post = self.buf[self.cursor.pos.1 + 1].clone();
                                 let pre = &mut self.buf[self.cursor.pos.1];
 
-                                pre.push_str(&post);
+                                pre.extend(post);
                                 self.buf.remove(self.cursor.pos.1 + 1);
                             }
                             CursorState::StatusBar | CursorState::Find => return Ok(false),
@@ -1037,7 +1051,7 @@ impl Editor {
             for x in 0..self.w {
                 let x = (x + UI_WIDTH) as usize;
                 let ch_idx = x + cx - UI_WIDTH as usize;
-                let ch = get2d(&self.buf, row_idx, ch_idx).unwrap_or(' ');
+                let ch = *get2d(&self.buf, row_idx, ch_idx).unwrap_or(&' ');
 
                 let mut bg = BLACK;
                 let mut fg = get_curr_word(&mut words, ch_idx)
@@ -1082,7 +1096,7 @@ impl Editor {
         let status_iter = self
             .status_prompt
             .chars()
-            .chain(self.status.chars())
+            .chain(self.status.iter().copied())
             .chain(std::iter::repeat(' '));
         for (x, ch) in (0..self.display.w as usize).zip(status_iter) {
             let cell = Cell {
@@ -1124,8 +1138,8 @@ fn lpad(mut s: String, n: usize) -> String {
     s
 }
 
-fn get2d(v: &[String], i: usize, j: usize) -> Option<char> {
-    v.get(i)?.chars().nth(j)
+fn get2d<T>(v: &[Vec<T>], i: usize, j: usize) -> Option<&T> {
+    v.get(i)?.get(j)
 }
 
 fn logger(port: u16) -> std::io::Result<Sender<String>> {
