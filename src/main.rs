@@ -12,13 +12,16 @@ use std::{
     cmp::Ordering,
     ffi::CString,
     io::{Read, Write},
-    net::{IpAddr, SocketAddr, TcpListener},
     num::NonZeroUsize,
     process::exit,
+    time::Duration,
+};
+#[cfg(debug_assertions)]
+use std::{
+    net::{IpAddr, SocketAddr, TcpListener},
     str::FromStr,
     sync::mpsc::{self, Sender},
     thread,
-    time::Duration,
 };
 
 use crossterm_display::*;
@@ -89,6 +92,7 @@ struct Editor {
     status: Vec<char>,
     status_prompt: String,
     prompt_type: Option<PromptType>,
+    #[cfg(debug_assertions)]
     logger: Option<Sender<String>>,
     unsaved_changes: bool,
     clipboard: Option<Vec<Vec<char>>>,
@@ -121,6 +125,7 @@ impl Editor {
             h,
             status: Vec::new(),
             status_prompt: String::new(),
+            #[cfg(debug_assertions)]
             logger: None,
             prompt_type: None,
             unsaved_changes: true,
@@ -153,17 +158,22 @@ impl Editor {
         res
     }
 
+    #[cfg(debug_assertions)]
     fn enable_logging(&mut self, port: u16) -> std::io::Result<()> {
         self.logger = Some(logger(port)?);
         self.set_status(format!("Successfully enabled logging on port {port}"));
         Ok(())
     }
 
+    #[cfg(debug_assertions)]
     fn log(&mut self, msg: String) {
         if let Some(logger) = &self.logger {
             let _ = logger.send(msg); // ignore errors when logging since they aren't that important
         }
     }
+
+    #[cfg(not(debug_assertions))]
+    fn log(&self, msg: String) { let _ = msg; }
 
     fn set_status(&mut self, status: String) {
         self.log(format!("[STATUS] {status}"));
@@ -1142,6 +1152,7 @@ fn get2d<T>(v: &[Vec<T>], i: usize, j: usize) -> Option<&T> {
     v.get(i)?.get(j)
 }
 
+#[cfg(debug_assertions)]
 fn logger(port: u16) -> std::io::Result<Sender<String>> {
     let addr = SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port);
 
@@ -1180,6 +1191,7 @@ fn main() -> Result<(), std::io::Error> {
     let mut editor =
         Editor::new(lang_from_name(DEFAULT_LANG).expect("default language should exist"))?;
 
+    #[cfg(debug_assertions)]
     editor.enable_logging(6969)?;
 
     while args.next_if_eq("--plugin").is_some() {
