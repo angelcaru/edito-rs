@@ -558,7 +558,22 @@ impl Editor {
                 || self
                     .row()
                     .get(cx)
-                    .filter(|ch| !ch.is_ascii_alphanumeric())
+                    .filter(|ch| ch.is_whitespace()) // ch.is_ascii_alphanumeric())
+                    .is_some()
+            {
+                break;
+            }
+        }
+
+        loop {
+            self.move_cursor(dir, 0);
+            let cx = self.cursor.pos.0;
+            if cx == 0
+                || cx == self.row().len()
+                || self
+                    .row()
+                    .get(cx)
+                    .filter(|ch| !ch.is_whitespace()) // !ch.is_ascii_alphanumeric())
                     .is_some()
             {
                 break;
