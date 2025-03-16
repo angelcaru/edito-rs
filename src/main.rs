@@ -956,21 +956,7 @@ impl Editor {
             }
         }
 
-        // TODO: this should really be in crossterm-display
-        for x in 0..self.display.w as usize {
-            for y in 0..self.display.h as usize {
-                self.display.write(
-                    x,
-                    y,
-                    Cell {
-                        ch: ' ',
-                        fg: Color::White,
-                        bg: BLACK,
-                        attr: Attribute::Reset,
-                    },
-                );
-            }
-        }
+        self.display.clear_colored(BLACK);
 
         self.display
             .stdout
