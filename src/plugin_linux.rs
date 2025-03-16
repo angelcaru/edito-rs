@@ -25,7 +25,7 @@ impl Plugin {
 
         Ok(Self {
             handle,
-            init: unsafe { std::mem::transmute(init) },
+            init: unsafe { std::mem::transmute::<*mut libc::c_void, extern "C" fn(*mut Api)>(init) },
             cmds: Vec::new(),
             on_render: None,
         })
@@ -43,3 +43,4 @@ impl std::ops::Drop for Plugin {
         }
     }
 }
+

@@ -173,7 +173,9 @@ impl Editor {
     }
 
     #[cfg(not(debug_assertions))]
-    fn log(&self, msg: String) { let _ = msg; }
+    fn log(&self, msg: String) {
+        let _ = msg;
+    }
 
     fn set_status(&mut self, status: String) {
         self.log(format!("[STATUS] {status}"));

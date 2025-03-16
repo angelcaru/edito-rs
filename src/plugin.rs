@@ -1,4 +1,3 @@
-
 // Common code for both Windows and Linux
 use std::ffi::CString;
 
@@ -123,4 +122,3 @@ include!("plugin_windows.rs");
 
 #[cfg(all(not(unix), not(windows)))]
 compile_error!("unsupported platform");
-
