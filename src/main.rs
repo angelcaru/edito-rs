@@ -15,6 +15,7 @@ use std::{
     num::NonZeroUsize,
     process::exit,
     time::Duration,
+    path::{Path, PathBuf},
 };
 #[cfg(debug_assertions)]
 use std::{
@@ -42,6 +43,7 @@ impl<T: Write> WriteChar for T {
 
 type Pos = (usize, usize);
 
+#[derive(Default)]
 struct Cursor {
     selection_start: Option<Pos>,
     pos: Pos,
@@ -74,6 +76,12 @@ enum CursorState {
     Find,
 }
 
+impl Default for CursorState {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 #[derive(Clone, Copy)]
 enum PromptType {
     FileSave,
@@ -85,19 +93,22 @@ struct Editor {
     display: TerminalDisplay,
     buf: Vec<Vec<char>>,
     cursor: Cursor,
-    file_path: Option<String>,
+    file_path: Option<PathBuf>,
     camera_topleft: Pos,
     w: u16,
     h: u16,
     status: Vec<char>,
     status_prompt: String,
     prompt_type: Option<PromptType>,
-    #[cfg(debug_assertions)]
-    logger: Option<Sender<String>>,
     unsaved_changes: bool,
     clipboard: Option<Vec<Vec<char>>>,
     language: Box<dyn Language>,
     plugins: Vec<Plugin>,
+
+    file_browser_open: bool,
+
+    #[cfg(debug_assertions)]
+    logger: Option<Sender<String>>,
 }
 
 const UI_WIDTH: u16 = 4;
@@ -125,13 +136,15 @@ impl Editor {
             h,
             status: Vec::new(),
             status_prompt: String::new(),
-            #[cfg(debug_assertions)]
-            logger: None,
             prompt_type: None,
             unsaved_changes: true,
             clipboard: None,
             language: Box::new(language),
             plugins: Vec::new(),
+            file_browser_open: false,
+
+            #[cfg(debug_assertions)]
+            logger: None,
         })
     }
 
@@ -192,8 +205,27 @@ impl Editor {
         self.prompt_type = Some(prompt_type);
     }
 
-    fn load_file(&mut self, file_path: String) -> Result<(), std::io::Error> {
-        let f = std::fs::File::open(file_path.clone())?.bytes();
+    fn reset_cursor(&mut self) {
+        self.cursor = Cursor::default();
+        self.camera_topleft = (0, 0);
+    }
+
+    fn load_directory(&mut self, dir: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        std::env::set_current_dir(dir)?;
+        self.buf = std::fs::read_dir(".")?
+            .map(|entry_res| entry_res.map(|entry| entry.path().to_str().expect("fuck you").chars().skip(2).collect()))
+            .chain([Ok(vec!['.', '.'])])
+            .collect::<Result<_, _>>()?;
+        self.buf.sort();
+
+        self.reset_cursor();
+        self.file_browser_open = true;
+
+        Ok(())
+    }
+
+    fn load_file(&mut self, file_path: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        let f = std::fs::File::open(&file_path)?.bytes();
 
         self.buf = Vec::new();
         let mut row = Vec::new();
@@ -210,16 +242,35 @@ impl Editor {
         self.buf
             .push(String::from_utf8_lossy(&row).chars().collect());
 
-        self.file_path = Some(file_path.clone());
+        self.file_path = Some(file_path.as_ref().to_owned());
 
-        self.set_status(format!("Successfully loaded file {}", file_path));
+        //self.set_status(format!("Successfully loaded file {}", &self.file_path));
         self.unsaved_changes = false;
 
         let default_lang = lang_from_name(DEFAULT_LANG).expect("default language should exist");
-        let lang = lang_from_filename(file_path.as_str()).unwrap_or(default_lang);
+        let lang = lang_from_filename(file_path.as_ref().to_str().expect("fuck you")).unwrap_or(default_lang);
         self.language = Box::new(lang);
 
+        self.reset_cursor();
+        self.file_browser_open = false;
+
         Ok(())
+    }
+
+    fn load_file_or_directory(&mut self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        if let Err(err) = self.load_directory(&path) {
+            if err.kind() == std::io::ErrorKind::NotADirectory {
+                self.load_file(path)
+            } else {
+                Err(err)
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    fn open_file_browser(&mut self) -> Result<(), std::io::Error> {
+        self.load_directory(".")
     }
 
     fn save_file(&mut self) -> Result<(), std::io::Error> {
@@ -237,7 +288,7 @@ impl Editor {
 
         self.set_status(format!(
             "Successfully saved file to {}",
-            self.file_path.clone().unwrap()
+            self.file_path.clone().unwrap().display()
         ));
         self.unsaved_changes = false;
 
@@ -315,7 +366,7 @@ impl Editor {
                     return "ERROR: the \"load\" command expects exactly one argument (without spaces)".into();
                 }
 
-                self.load_file(cmd[1].into()).err().map(|err| format!("ERROR: {err}"))
+                self.load_file_or_directory(cmd[1]).err().map(|err| format!("ERROR: {err}"))
             }
             "save" => {
                 self.save_file().err().map(|err| format!("ERROR: {err}"))
@@ -388,7 +439,7 @@ impl Editor {
             .expect("we never call this when the prompt is empty")
         {
             PromptType::FileSave => {
-                self.file_path = Some(response);
+                self.file_path = Some(response.into());
                 self.save_file()?;
             }
             PromptType::QuitOnNoSave => {
@@ -678,11 +729,10 @@ impl Editor {
         self.cursor.pos.0 = self.row().len();
     }
 
-    fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
+    fn handle_event_file(&mut self, e: Event) -> Result<bool, std::io::Error> {
         if let CursorState::Default = self.cursor.state {
             self.status = Vec::new();
         }
-        self.log(format!("Got event: {e:?}"));
         match e {
             Event::Resize(w, h) => {
                 self.display.resize(w, h);
@@ -705,6 +755,12 @@ impl Editor {
                     quit();
                 }
             }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('l'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }) => self.open_file_browser()?,
             Event::Key(KeyEvent {
                 code: KeyCode::Char('s'),
                 modifiers: KeyModifiers::CONTROL,
@@ -943,6 +999,58 @@ impl Editor {
         Ok(false)
     }
 
+    fn handle_event_browser(&mut self, e: Event) -> Result<bool, std::io::Error> {
+        _ = e;
+        match e {
+            Event::Resize(w, h) => {
+                self.display.resize(w, h);
+                self.w = w - UI_WIDTH;
+                self.h = h - UI_HEIGHT;
+            }
+
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('q'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }) => return Ok(true),
+
+            Event::Key(KeyEvent {
+                code: KeyCode::Enter,
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }) => {
+                let row: String = self.row().iter().copied().collect();
+                self.log(format!("Changing directory: {row}"));
+                self.load_file_or_directory(row)?;
+            },
+
+            Event::Key(KeyEvent {
+                code: KeyCode::Up,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }) => self.move_cursor(0, -1),
+            Event::Key(KeyEvent {
+                code: KeyCode::Down,
+                kind: KeyEventKind::Press | KeyEventKind::Repeat,
+                ..
+            }) => self.move_cursor(0, 1),
+
+            _ => {},
+        }
+        Ok(false)
+    }
+
+    fn handle_event(&mut self, e: Event) -> Result<bool, std::io::Error> {
+        self.log(format!("Got event: {e:?}"));
+        if self.file_browser_open {
+            self.handle_event_browser(e)
+        } else {
+            self.handle_event_file(e)
+        }
+    }
+
     fn render(&mut self) -> Result<(), std::io::Error> {
         use crossterm::cursor::SetCursorStyle;
 
@@ -1094,7 +1202,7 @@ impl Editor {
             .unwrap_or("<temporary buffer>".into());
         for x in 0..self.display.w as usize {
             let cell = Cell {
-                ch: file_path.chars().nth(x).unwrap_or(' '),
+                ch: file_path.to_str().expect("fuck you").chars().nth(x).unwrap_or(' '),
                 fg: BLACK,
                 bg: Color::White,
                 attr: Attribute::Reset,
@@ -1210,7 +1318,7 @@ fn main() -> Result<(), std::io::Error> {
     }
 
     if let Some(file_path) = args.next() {
-        editor.load_file(file_path)?;
+        editor.load_file_or_directory(file_path)?;
     }
 
     terminal::enable_raw_mode()?;
@@ -1226,8 +1334,12 @@ fn main() -> Result<(), std::io::Error> {
 
     loop {
         if poll(polling_rate)? {
-            editor.handle_event(read()?)?;
+            if editor.handle_event(read()?)? {
+                break;
+            }
         }
         editor.render()?;
     }
+
+    terminal::disable_raw_mode()
 }
